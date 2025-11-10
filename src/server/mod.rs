@@ -2,18 +2,23 @@ mod error;
 mod threadpool;
 
 pub use error::ServerError;
+pub use threadpool::ThreadPool;
 
-use std::net::{TcpListener, TcpStream};
-
-use crate::{
-    message::{
-        Response, ResponseBuilder, StatusCode, {Request, RequestParser},
-    },
-    server::threadpool::ThreadPool,
+use std::{
+    io::{Read, Write},
+    net::{TcpListener, TcpStream},
 };
 
-pub struct Server {
-    pool: ThreadPool,
+use crate::{
+    message::{Request, RequestParser, Response, ResponseBuilder, StatusCode},
+    server::threadpool::Executor,
+};
+
+pub trait Stream: Read + Write + Send {}
+impl<T: Read + Write + Send> Stream for T {}
+
+pub struct Server<E: Executor> {
+    pool: E,
     handler: Handler,
     _addr: String,
     listener: TcpListener,
@@ -21,8 +26,8 @@ pub struct Server {
 
 type Handler = fn(&Request) -> Result<Response, ServerError>;
 
-impl Server {
-    pub fn new(addr: &str, handler: Handler) -> Server {
+impl Server<ThreadPool> {
+    pub fn new(addr: &str, handler: Handler) -> Server<ThreadPool> {
         let pool = ThreadPool::new(8);
         let listener = TcpListener::bind(addr).expect("Could not bind to addr: {addr}");
         Server {
@@ -44,7 +49,7 @@ impl Server {
     }
 }
 
-fn internal_error(mut stream: TcpStream) {
+fn internal_error<S: Stream>(mut stream: S) {
     let mut builder = ResponseBuilder::new();
     builder.set_status_code(StatusCode::InternalServerError);
     let mut response = builder.build();
@@ -53,21 +58,105 @@ fn internal_error(mut stream: TcpStream) {
     // Something is wrong if it can't write to the stream
 }
 
-    fn handle_connection(mut stream: TcpStream, handler: Handler) {
-        let request = RequestParser::request_from_reader(&mut stream);
+fn handle_connection<S: Stream>(mut stream: S, handler: Handler) {
+    let request = RequestParser::request_from_reader(&mut stream);
 
-        let Ok(request) = request else {
-            return Server::internal_error(stream);
-        };
+    let Ok(request) = request else {
+        return internal_error(stream);
+    };
 
-        let response = handler(&request);
+    let response = handler(&request);
 
-        let Ok(mut response) = response else {
-            return Server::internal_error(stream);
-        };
+    let Ok(mut response) = response else {
+        return internal_error(stream);
+    };
 
-        if response.write_to(&mut stream).is_err() {
-            Server::internal_error(stream);
+    if response.write_to(&mut stream).is_err() {
+        internal_error(stream);
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use pretty_assertions::assert_eq;
+    use std::thread;
+
+    use super::*;
+
+    impl Executor for FakeExecutor {
+        fn execute<F>(&self, f: F)
+        where
+            F: FnOnce() + Send + 'static,
+        {
+            f();
         }
+    }
+
+    fn fake_handler(_: &Request) -> Result<Response, ServerError> {
+        let mut builder = ResponseBuilder::new();
+        builder.add_to_body(b"Hello")?;
+        Ok(builder.build())
+    }
+
+    #[derive(Clone)]
+    struct FakeExecutor;
+    impl Server<FakeExecutor> {
+        pub fn test(handler: Handler) -> Server<FakeExecutor> {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            Server {
+                pool: FakeExecutor,
+                handler,
+                _addr: "".to_string(),
+                listener,
+            }
+        }
+    }
+
+    #[test]
+    fn test_handle_connection_ok() {
+        use std::io::Cursor;
+
+        let mut fake_stream = Cursor::new(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n".to_vec());
+
+        fn test_handler(_: &Request) -> Result<Response, ServerError> {
+            let mut builder = ResponseBuilder::new();
+            builder.add_to_body(b"ok").unwrap();
+            Ok(builder.build())
+        }
+
+        handle_connection(&mut fake_stream, test_handler);
+
+        let written = fake_stream.into_inner();
+        assert!(String::from_utf8_lossy(&written).contains("ok"));
+    }
+
+    #[test]
+    fn test_server_handles_request() {
+        let server = Server::test(fake_handler);
+        let addr = server.listener.local_addr().unwrap();
+
+        thread::spawn(move || {
+            if let Ok((stream, _)) = server.listener.accept() {
+                handle_connection(stream, server.handler);
+            }
+        });
+
+        let mut stream = TcpStream::connect(addr).unwrap();
+        stream
+            .write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")
+            .unwrap();
+
+        let mut buf = Vec::new();
+        stream.read_to_end(&mut buf).unwrap();
+        let mut builder = ResponseBuilder::new();
+        builder.add_to_body(b"hello").unwrap();
+        let mut response = builder.build();
+
+        let mut expected = Vec::new();
+        response.write_to(&mut expected).unwrap();
+        let output = String::from_utf8_lossy(&buf);
+        let expected = String::from_utf8_lossy(&expected);
+
+        assert_eq!(output, expected,);
     }
 }

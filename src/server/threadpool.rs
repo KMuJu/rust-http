@@ -7,9 +7,15 @@ use std::{
     thread::{self, JoinHandle},
 };
 
+pub trait Executor: Send + Sync + 'static {
+    fn execute<F>(&self, f: F)
+    where
+        F: FnOnce() + Send + 'static;
+}
+
 type Job = Box<dyn FnOnce() + Send + 'static>;
 
-pub(crate) struct ThreadPool {
+pub struct ThreadPool {
     workers: Vec<Worker>,
     sender: Option<Sender<Job>>,
 }
@@ -29,8 +35,10 @@ impl ThreadPool {
             sender: Some(sender),
         }
     }
+}
 
-    pub fn execute<F>(&self, f: F)
+impl Executor for ThreadPool {
+    fn execute<F>(&self, f: F)
     where
         F: FnOnce() + Send + 'static,
     {

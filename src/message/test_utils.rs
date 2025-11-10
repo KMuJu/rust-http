@@ -41,6 +41,7 @@ pub mod batch_reader {
     #[cfg(test)]
     mod tests {
         use super::*;
+        use pretty_assertions::assert_eq;
 
         #[test]
         fn test_request_parser() -> std::io::Result<()> {

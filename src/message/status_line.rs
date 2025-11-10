@@ -69,6 +69,7 @@ impl StatusLine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pretty_assertions::assert_eq;
 
     #[test]
     fn test_status_line_write_to() -> Result<()> {

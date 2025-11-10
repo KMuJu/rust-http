@@ -62,6 +62,7 @@ impl Write for Response {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pretty_assertions::assert_eq;
 
     #[test]
     fn test_write_response() -> Result<()> {
