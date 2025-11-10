@@ -1,10 +1,9 @@
-use std::io;
+use rust_http::message::Method;
+use rust_http::message::ResponseBuilder;
+use rust_http::message::StatusCode;
+use rust_http::server::{Server, ServerError};
 
-use rust_http::message::method::Method;
-use rust_http::message::status_line::StatusCode;
-use rust_http::server::{error::ServerError, response_builder::ResponseBuilder, server::Server};
-
-use rust_http::message::{request::Request, response::Response};
+use rust_http::message::{Request, Response};
 
 fn main() {
     let server = Server::new("localhost:42069", handle_request);

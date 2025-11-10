@@ -1,4 +1,4 @@
-use crate::message::{error::RequestLineError, method::Method};
+use crate::message::{Method, error::RequestLineError};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct RequestLine {

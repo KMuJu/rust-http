@@ -1,9 +1,6 @@
 use std::io::{Result, Write};
 
-use crate::message::{
-    headers::Headers,
-    status_line::{StatusCode, StatusLine},
-};
+use crate::message::{Headers, StatusCode, StatusLine};
 
 #[derive(Debug)]
 pub struct Response {

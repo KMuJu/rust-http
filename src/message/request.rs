@@ -1,8 +1,6 @@
 use std::io::Read;
 
-use crate::message::{
-    error::RequestError, headers::Headers, method::Method, request_line::RequestLine,
-};
+use crate::message::{Headers, Method, RequestError, RequestLine};
 
 #[derive(Debug)]
 pub struct Request {

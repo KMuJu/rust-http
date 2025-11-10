@@ -1,12 +1,8 @@
 use std::io::Write;
 
 use crate::{
-    message::{
-        headers::Headers,
-        response::Response,
-        status_line::{StatusCode, StatusLine},
-    },
-    server::error::ServerError,
+    message::{Headers, Response, StatusCode, StatusLine},
+    server::ServerError,
 };
 
 pub struct ResponseBuilder {
