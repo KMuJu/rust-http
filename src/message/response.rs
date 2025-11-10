@@ -1,4 +1,7 @@
-use std::io::{Result, Write};
+use std::{
+    fs,
+    io::{self, Result, Write},
+};
 
 use crate::message::{Headers, StatusCode, StatusLine};
 
@@ -44,6 +47,18 @@ impl Response {
             headers: Headers::new_with_default(),
             body: Vec::new(),
         }
+    }
+
+    pub fn from_file(filename: &str, content_type: &str) -> io::Result<Response> {
+        let filecontent = fs::read(filename)?;
+        let mut headers = Headers::new_with_default();
+        headers.set("Content-Length", filecontent.len().to_string());
+        headers.set("Content-Type", content_type);
+        Ok(Response {
+            status_line: StatusLine::new(StatusCode::Ok),
+            headers,
+            body: filecontent,
+        })
     }
 }
 
