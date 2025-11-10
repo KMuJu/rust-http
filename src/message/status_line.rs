@@ -1,6 +1,6 @@
 use std::io::{Result, Write};
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StatusCode {
     Ok,                  // 200
     BadRequest,          // 400
@@ -34,8 +34,8 @@ impl StatusCode {
 
 #[derive(Debug)]
 pub struct StatusLine {
-    version: String,
-    status_code: StatusCode,
+    pub version: String,
+    pub status_code: StatusCode,
 }
 
 impl StatusLine {

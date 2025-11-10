@@ -1,40 +1,28 @@
-use std::{
-    io::{Result, Write},
-    net::{TcpListener, TcpStream},
-};
+use std::io;
 
-use crate::message::{request::RequestParser, response::Response, status_line::StatusCode};
+use rust_http::message::method::Method;
+use rust_http::message::status_line::StatusCode;
+use rust_http::server::{error::ServerError, response_builder::ResponseBuilder, server::Server};
 
-mod message;
+use rust_http::message::{request::Request, response::Response};
 
-fn main() -> Result<()> {
-    let listener = TcpListener::bind("127.0.0.1:42069").expect("Could not bind to addr");
-
-    for stream in listener.incoming() {
-        handle_client(stream?);
-    }
-    Ok(())
+fn main() {
+    let server = Server::new("localhost:42069", handle_request);
+    server.listen_and_serve();
 }
 
-fn handle_client(mut stream: TcpStream) {
-    let request = RequestParser::request_from_reader(&mut stream);
-    match request {
-        Ok(req) => {
-            // println!("Got request: {:?}", req);
-            println!(
-                "Got request for: {:?} {} {}",
-                req.line.method, req.line.url, req.line.version
-            );
-
-            let mut resp = Response::new(StatusCode::Ok);
-            if let Err(e) = resp.write_all(b"Hello World") {
-                eprint!("Error when writing to body: {}", e);
-            }
-            if let Err(e) = resp.write_to(&mut stream) {
-                eprint!("Error when writing to stream: {}", e);
-            }
+fn handle_request(req: &Request) -> Result<Response, ServerError> {
+    println!("Got request to: {:?} {}", req.line.method, req.line.url);
+    match (req.get_method(), req.get_url()) {
+        (Method::Get, "/") => {
+            let mut builder = ResponseBuilder::new();
+            builder.add_to_body(b"Hello World")?;
+            Ok(builder.build())
         }
-        Err(e) => eprint!("Error: {}", e),
+        (_, _) => {
+            let mut builder = ResponseBuilder::new();
+            builder.set_status_code(StatusCode::NotFound);
+            Ok(builder.build())
+        }
     }
-    println!("Finished with client");
 }

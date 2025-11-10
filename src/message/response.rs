@@ -7,9 +7,9 @@ use crate::message::{
 
 #[derive(Debug)]
 pub struct Response {
-    status_line: StatusLine,
-    headers: Headers,
-    body: Vec<u8>,
+    pub status_line: StatusLine,
+    pub headers: Headers,
+    pub body: Vec<u8>,
 }
 
 impl Response {
@@ -39,6 +39,14 @@ impl Response {
         }
 
         Ok(())
+    }
+
+    pub fn internal_error() -> Response {
+        Response {
+            status_line: StatusLine::new(StatusCode::InternalServerError),
+            headers: Headers::new_with_default(),
+            body: Vec::new(),
+        }
     }
 }
 

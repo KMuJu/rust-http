@@ -1,9 +1,7 @@
 use std::io::Read;
 
 use crate::message::{
-    error::{RequestError, RequestLineError},
-    headers::Headers,
-    request_line::RequestLine,
+    error::RequestError, headers::Headers, method::Method, request_line::RequestLine,
 };
 
 #[derive(Debug)]
@@ -11,6 +9,16 @@ pub struct Request {
     pub line: RequestLine,
     pub headers: Headers,
     body: Vec<u8>,
+}
+
+impl Request {
+    pub fn get_method(&self) -> &Method {
+        &self.line.method
+    }
+
+    pub fn get_url(&self) -> &str {
+        &self.line.url
+    }
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -104,16 +112,8 @@ impl RequestParser {
                     let Some(len) = self.body_len else {
                         return Err(RequestError::InvalidContentLength);
                     };
-                    println!("Body len: {}", len);
-                    println!("Bytes len: {}, read: {}", bytes.len(), read);
                     let current_data = &bytes[read..];
-                    println!("Current data: {}", String::from_utf8_lossy(&bytes[read..]));
                     self.request.body.extend_from_slice(current_data);
-
-                    println!(
-                        "Current body: {}",
-                        String::from_utf8_lossy(&self.request.body)
-                    );
 
                     if self.request.body.len() > len {
                         return Err(RequestError::BodyTooLong);
