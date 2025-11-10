@@ -38,19 +38,20 @@ impl Server {
         for stream in self.listener.incoming() {
             let stream = stream.unwrap();
             self.pool.execute(move || {
-                Server::handle_connection(stream, handler);
+                handle_connection(stream, handler);
             });
         }
     }
+}
 
-    fn internal_error(mut stream: TcpStream) {
-        let mut builder = ResponseBuilder::new();
-        builder.set_status_code(StatusCode::InternalServerError);
-        let mut response = builder.build();
-        let r = response.write_to(&mut stream);
-        assert!(r.is_ok(), "Failed to write internal error to tcp stream");
-        // Something is wrong if it can't write to the stream
-    }
+fn internal_error(mut stream: TcpStream) {
+    let mut builder = ResponseBuilder::new();
+    builder.set_status_code(StatusCode::InternalServerError);
+    let mut response = builder.build();
+    let r = response.write_to(&mut stream);
+    assert!(r.is_ok(), "Failed to write internal error to tcp stream");
+    // Something is wrong if it can't write to the stream
+}
 
     fn handle_connection(mut stream: TcpStream, handler: Handler) {
         let request = RequestParser::request_from_reader(&mut stream);
