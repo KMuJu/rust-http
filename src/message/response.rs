@@ -16,7 +16,7 @@ impl Response {
     pub fn new(status_code: StatusCode) -> Response {
         Response {
             status_line: StatusLine::new(status_code),
-            headers: Headers::new_with_default(),
+            headers: Headers::new(),
             body: Vec::new(),
         }
     }
@@ -31,7 +31,7 @@ impl Response {
         self.status_line.write_to(&mut w)?;
         if !self.body.is_empty() {
             self.headers
-                .set("Content-Length", self.body.len().to_string());
+                .add("Content-Length", self.body.len().to_string());
         }
         self.headers.write_to(&mut w)?;
         if !self.body.is_empty() {
@@ -44,16 +44,16 @@ impl Response {
     pub fn internal_error() -> Response {
         Response {
             status_line: StatusLine::new(StatusCode::InternalServerError),
-            headers: Headers::new_with_default(),
+            headers: Headers::new(),
             body: Vec::new(),
         }
     }
 
     pub fn from_file(filename: &str, content_type: &str) -> io::Result<Response> {
         let filecontent = fs::read(filename)?;
-        let mut headers = Headers::new_with_default();
-        headers.set("Content-Length", filecontent.len().to_string());
-        headers.set("Content-Type", content_type);
+        let mut headers = Headers::new();
+        headers.add("Content-Length", filecontent.len().to_string());
+        headers.add("Content-Type", content_type);
         Ok(Response {
             status_line: StatusLine::new(StatusCode::Ok),
             headers,
@@ -85,9 +85,9 @@ mod tests {
         response.headers = Headers::new(); // Remove default headers, these can change
         let mut buf = Vec::new();
         response.write_to(&mut buf)?;
-        assert_eq!(buf, b"HTTP/1.1 200 Ok\r\n\r\n");
+        assert_eq!(buf, b"HTTP/1.1 200 Ok\r\n");
 
-        response.headers.set("Content-Type", "text/plain");
+        response.headers.add("Content-Type", "text/plain");
         buf = Vec::new();
         response.write_to(&mut buf)?;
         assert_eq!(buf, b"HTTP/1.1 200 Ok\r\ncontent-type: text/plain\r\n\r\n");

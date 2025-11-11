@@ -46,15 +46,11 @@ impl Headers {
         Headers(HashMap::new())
     }
 
-    pub fn new_with_default() -> Headers {
-        let mut h = Headers(HashMap::new());
-        h.0.insert("connection".to_string(), "close".to_string()); // TODO: Implement keep alive
-        h.0.insert("content-type".to_string(), "text/plain".to_string());
-
-        h
+    pub fn add_default(&mut self) {
+        self.set("connection".to_string(), "close".to_string()); // TODO: Implement keep alive
     }
 
-    pub fn set<K, V>(&mut self, name: K, value: V) -> Option<String>
+    pub fn add<K, V>(&mut self, name: K, value: V) -> Option<String>
     where
         K: Into<String>,
         V: Into<String>,
@@ -69,8 +65,22 @@ impl Headers {
         }
     }
 
+    pub fn set<K, V>(&mut self, name: K, value: V)
+    where
+        K: Into<String>,
+        V: Into<String>,
+    {
+        let name = name.into().to_lowercase();
+        let value = value.into().to_string();
+        self.0.insert(name, value);
+    }
+
     pub fn get(&self, name: &str) -> Option<&String> {
         self.0.get(&name.to_lowercase())
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 
     pub fn parse(&mut self, bytes: &[u8]) -> Result<usize, HeadersError> {
@@ -100,12 +110,15 @@ impl Headers {
         let name = String::from_utf8_lossy(name_bytes).into_owned();
         let value = String::from_utf8_lossy(value_bytes).into_owned();
 
-        self.set(&name, &value);
+        self.add(&name, &value);
 
         Ok(end + CRLF.len())
     }
 
     pub fn write_to<W: Write>(&self, mut w: W) -> Result<(), io::Error> {
+        if self.0.is_empty() {
+            return Ok(());
+        }
         // TODO: Consider switching to BTreeMap
         let mut keys: Vec<_> = self.0.keys().collect();
         keys.sort();
@@ -167,12 +180,12 @@ mod tests {
     fn test_write_to() -> io::Result<()> {
         let mut buf = Vec::new();
         let mut headers = Headers::new();
-        headers.set("a", "b");
+        headers.add("a", "b");
         headers.write_to(&mut buf)?;
         assert_eq!(buf, b"a: b\r\n\r\n");
 
         buf = Vec::new();
-        headers.set("c", "d");
+        headers.add("c", "d");
         headers.write_to(&mut buf)?;
         assert_eq!(buf, b"a: b\r\nc: d\r\n\r\n");
 

@@ -20,7 +20,7 @@ impl ResponseBuilder {
     pub fn new() -> ResponseBuilder {
         ResponseBuilder {
             status_line: StatusLine::new(StatusCode::Ok),
-            headers: Headers::new_with_default(),
+            headers: Headers::new(),
             body: Vec::new(),
         }
     }
@@ -37,7 +37,7 @@ impl ResponseBuilder {
         K: Into<String>,
         V: Into<String>,
     {
-        self.headers.set(name, value);
+        self.headers.add(name, value);
         self
     }
 
