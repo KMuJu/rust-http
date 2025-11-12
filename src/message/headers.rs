@@ -75,6 +75,14 @@ impl Headers {
         self.0.insert(name, value);
     }
 
+    pub fn remove<K>(&mut self, name: K)
+    where
+        K: Into<String>,
+    {
+        let name = name.into().to_lowercase();
+        self.0.remove(&name);
+    }
+
     pub fn get(&self, name: &str) -> Option<&String> {
         self.0.get(&name.to_lowercase())
     }
@@ -85,10 +93,9 @@ impl Headers {
 
     pub fn parse(&mut self, bytes: &[u8]) -> Result<usize, HeadersError> {
         let end_of_line = bytes.windows(CRLF.len()).position(|w| w == CRLF);
-        if end_of_line.is_none() {
+        let Some(end) = end_of_line else {
             return Ok(0);
-        }
-        let end = end_of_line.unwrap();
+        };
         if end == 0 {
             return Ok(CRLF.len());
         }

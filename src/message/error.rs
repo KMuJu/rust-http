@@ -34,8 +34,14 @@ pub enum RequestError {
     #[error("Body longer than content-length")]
     BodyTooLong,
 
+    #[error("Malformed body")]
+    MalformedBody,
+
     #[error("IO error: {0}")]
     IO(#[from] Error),
+
+    #[error("Contained both Transfer-Encoding and Content-Length")]
+    InvalidHeaderFields,
 }
 
 #[derive(Debug, Error)]
