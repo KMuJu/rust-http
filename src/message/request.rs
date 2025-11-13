@@ -1,6 +1,6 @@
 use std::{io::Read, usize};
 
-use crate::message::{Headers, Method, RequestError, RequestLine};
+use crate::message::{Headers, Method, RequestError, RequestLine, error::HeadersError};
 
 #[derive(Debug)]
 pub struct Request {
@@ -65,14 +65,14 @@ impl RequestParser {
         let content = self.request.headers.get("Content-Length");
 
         if transmission.is_some() && content.is_some() {
-            return Err(RequestError::InvalidHeaderFields);
+            return Err(RequestError::Header(HeadersError::InvalidHeaderFields));
         }
 
         if let Some(transmission) = transmission {
             if transmission == "chunked" {
                 self.encoding = Some(Encoding::Chunked);
             } else {
-                return Err(RequestError::InvalidHeaderFields);
+                return Err(RequestError::Header(HeadersError::InvalidHeaderFields));
             }
         } else if let Some(length) = content {
             let cl = length.parse::<usize>();
@@ -84,14 +84,14 @@ impl RequestParser {
             // if all values seperated by ',' is equal, and a number, then this value will be used
             let mut values = length.split(',').map(|v| v.trim());
             let Some(first) = values.next() else {
-                return Err(RequestError::InvalidContentLength);
+                return Err(RequestError::Header(HeadersError::InvalidHeaderFields));
             };
             if !values.all(|v| v == first) {
-                return Err(RequestError::InvalidContentLength);
+                return Err(RequestError::Header(HeadersError::InvalidHeaderFields));
             }
             let len = first
                 .parse::<usize>()
-                .map_err(|_| RequestError::InvalidContentLength)?;
+                .map_err(|_| RequestError::Header(HeadersError::InvalidContentLength))?;
             self.encoding = Some(Encoding::Nothing(len));
         } else {
             self.encoding = Some(Encoding::Nothing(0))
@@ -126,7 +126,7 @@ impl RequestParser {
                     }
                     Err(e) => {
                         eprintln!("Error parsing chunked-size: {e}");
-                        return Err(RequestError::MalformedBody);
+                        return Err(RequestError::MalformedChunkedBody);
                     }
                 }
             }
@@ -136,7 +136,7 @@ impl RequestParser {
                 }
 
                 if bytes[size] != b'\r' && bytes[size + 1] != b'\n' {
-                    return Err(RequestError::MalformedBody);
+                    return Err(RequestError::MalformedChunkedBody);
                 }
 
                 let body = &bytes[..size];
@@ -171,7 +171,7 @@ impl RequestParser {
                 Ok(bytes.len())
             }
             Some(Encoding::Chunked) => self.parse_chunked_body(bytes),
-            None => Err(RequestError::InvalidHeaderFields), // TODO: Find better error type?
+            None => Err(RequestError::Header(HeadersError::InvalidContentLength)), // TODO: Find better error type?
         }
     }
 

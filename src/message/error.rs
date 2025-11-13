@@ -14,34 +14,34 @@ pub enum RequestLineError {
 #[derive(Debug, Error)]
 pub enum HeadersError {
     #[error("Malformed header")]
-    MalformedHeader,
+    MalformedFieldLine,
+
+    #[error("Contained both Transfer-Encoding and Content-Length")]
+    InvalidHeaderFields,
+
+    #[error("Invalid Content-Length value")]
+    InvalidContentLength,
 }
 
 #[derive(Debug, Error)]
 pub enum RequestError {
     #[error("Malformed request line: {0}")]
-    MalformedRequestLine(#[from] RequestLineError),
+    RequestLine(#[from] RequestLineError),
 
     #[error("Malformed header: {0}")]
-    MalformedHeader(#[from] HeadersError),
+    Header(#[from] HeadersError),
 
     #[error("Malformed request")]
     MalformedRequest,
 
-    #[error("Invalid content-length")]
-    InvalidContentLength,
-
     #[error("Body longer than content-length")]
     BodyTooLong,
 
-    #[error("Malformed body")]
-    MalformedBody,
+    #[error("Malformed chunked body")]
+    MalformedChunkedBody,
 
     #[error("IO error: {0}")]
     IO(#[from] Error),
-
-    #[error("Contained both Transfer-Encoding and Content-Length")]
-    InvalidHeaderFields,
 }
 
 #[derive(Debug, Error)]

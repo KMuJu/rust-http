@@ -106,13 +106,13 @@ impl Headers {
             .collect::<Vec<&[u8]>>();
 
         if parts.len() != 2 {
-            return Err(HeadersError::MalformedHeader);
+            return Err(HeadersError::MalformedFieldLine);
         }
 
         let name_bytes = parts[0];
         let value_bytes = parts[1].trim_ascii();
         if !is_valid_token(name_bytes) || !is_valid_field_value(value_bytes) {
-            return Err(HeadersError::MalformedHeader);
+            return Err(HeadersError::MalformedFieldLine);
         }
         let name = String::from_utf8_lossy(name_bytes).into_owned();
         let value = String::from_utf8_lossy(value_bytes).into_owned();
