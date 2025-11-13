@@ -22,6 +22,15 @@ fn handle_request(req: &Request) -> Result<Response, ServerError> {
             builder.add_to_body(b"Hello World")?;
             Ok(builder.build())
         }
+        (Method::Post, "/upload") => {
+            println!(
+                "Uploaded body: {}",
+                String::from_utf8_lossy(req.get_body()).escape_debug()
+            );
+            let mut builder = ResponseBuilder::new();
+            builder.add_header("Connection", "close");
+            Ok(builder.build())
+        }
         (_, _) => {
             let mut builder = ResponseBuilder::new();
             builder.set_status_code(StatusCode::NotFound);
