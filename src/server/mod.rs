@@ -20,7 +20,7 @@ impl<T: Read + Write + Send> Stream for T {}
 pub struct Server<E: Executor> {
     pool: E,
     handler: Handler,
-    _addr: String,
+    addr: String,
     listener: TcpListener,
 }
 
@@ -33,12 +33,13 @@ impl Server<ThreadPool> {
         Server {
             pool,
             handler,
-            _addr: addr.to_string(),
+            addr: addr.to_string(),
             listener,
         }
     }
 
     pub fn listen_and_serve(&self) {
+        println!("Listening to: {:?}", self.addr);
         let handler = self.handler;
         for stream in self.listener.incoming() {
             let stream = stream.unwrap();
@@ -106,7 +107,7 @@ mod test {
             Server {
                 pool: FakeExecutor,
                 handler,
-                _addr: "".to_string(),
+                addr: "".to_string(),
                 listener,
             }
         }
@@ -149,7 +150,7 @@ mod test {
         let mut buf = Vec::new();
         stream.read_to_end(&mut buf).unwrap();
         let mut builder = ResponseBuilder::new();
-        builder.add_to_body(b"hello").unwrap();
+        builder.add_to_body(b"Hello").unwrap();
         let mut response = builder.build();
 
         let mut expected = Vec::new();
