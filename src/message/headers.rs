@@ -46,10 +46,6 @@ impl Headers {
         Headers(HashMap::new())
     }
 
-    pub fn add_default(&mut self) {
-        self.set("connection".to_string(), "close".to_string()); // TODO: Implement keep alive
-    }
-
     pub fn add<K, V>(&mut self, name: K, value: V) -> Option<String>
     where
         K: Into<String>,
@@ -89,6 +85,30 @@ impl Headers {
 
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
+    }
+
+    pub fn field_contains_value<K, V>(&self, name: K, value: V) -> bool
+    where
+        K: Into<String>,
+        V: Into<String>,
+    {
+        let name = name.into().to_lowercase();
+        let value: String = value.into();
+        match self.0.get(&name) {
+            Some(v) => {
+                if v == &value {
+                    return true;
+                }
+                for value_part in v.split(',').map(|v| v.trim()) {
+                    if value_part == value {
+                        return true;
+                    }
+                }
+
+                false
+            }
+            None => false,
+        }
     }
 
     /// Parses one field line of the headers
@@ -206,5 +226,19 @@ mod tests {
         assert_eq!(buf, b"a: b\r\nc: d\r\n\r\n");
 
         Ok(())
+    }
+
+    #[test]
+    fn test_field_contains_value() {
+        let mut headers = Headers::new();
+        headers.add("a", "a");
+        headers.add("a", "b");
+
+        let res = headers.field_contains_value("a", "a");
+        assert!(res, "Headers should contain a");
+        let res = headers.field_contains_value("a", "b");
+        assert!(res, "Headers should contain b");
+        let res = headers.field_contains_value("a", "c");
+        assert!(!res, "Headers should not contain c");
     }
 }
