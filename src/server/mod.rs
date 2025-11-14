@@ -59,11 +59,11 @@ impl Server<ThreadPool> {
     }
 }
 
-fn internal_error<S: Stream>(mut stream: S) {
+fn internal_error<S: Stream>(stream: &mut S) {
     let mut builder = ResponseBuilder::new();
     builder.set_status_code(StatusCode::InternalServerError);
     let mut response = builder.build();
-    let r = response.write_to(&mut stream);
+    let r = response.write_to(stream);
     assert!(r.is_ok(), "Failed to write internal error to tcp stream");
     // Something is wrong if it can't write to the stream
 }
@@ -77,17 +77,19 @@ fn handle_connection<S: Stream>(mut stream: S, handler: Handler) {
     let request = RequestParser::request_from_reader(&mut stream);
 
     let Ok(request) = request else {
-        return internal_error(stream);
+        internal_error(&mut stream);
+        return;
     };
 
     let response = handler(&request);
 
     let Ok(mut response) = response else {
-        return internal_error(stream);
+        internal_error(&mut stream);
+        return;
     };
 
     if response.write_to(&mut stream).is_err() {
-        internal_error(stream);
+        internal_error(&mut stream);
     }
 
     // TODO: Handle keep alive connection
