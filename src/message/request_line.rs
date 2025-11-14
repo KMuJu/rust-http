@@ -9,14 +9,19 @@ pub struct RequestLine {
 const CRLF: &[u8; 2] = b"\r\n";
 
 impl RequestLine {
-    /// Follows RFC 9112
+    /// Follows RFC 9112 Section 3
     /// SP = Single Space
     ///
     /// request-line   = method SP request-target SP HTTP-version
     ///
+    /// # Returns
+    ///
+    /// No CRLF => Ok(None)
+    /// Valid data => Ok((RequestLine, data consumed))
+    ///
     /// # Errors
     ///
-    /// This function will return an error if .
+    /// This function will return an error if it does not follow the above format
     pub fn parse(bytes: &[u8]) -> Result<Option<(RequestLine, usize)>, RequestLineError> {
         let end_of_line = bytes.windows(CRLF.len()).position(|w| w == CRLF);
         if end_of_line.is_none() {

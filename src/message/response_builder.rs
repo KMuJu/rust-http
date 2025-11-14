@@ -15,7 +15,7 @@ impl ResponseBuilder {
     /// Creates a new [`ResponseBuilder`].
     /// Starts with a default response, which has:
     /// - Status code: 200
-    /// - Default headers
+    /// - No headers
     /// - Empty body
     pub fn new() -> ResponseBuilder {
         ResponseBuilder {

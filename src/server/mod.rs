@@ -17,6 +17,10 @@ use crate::{
 pub trait Stream: Read + Write + Send {}
 impl<T: Read + Write + Send> Stream for T {}
 
+/// HTTP Server
+///
+/// Uses a threadpool to handle requests
+///
 pub struct Server<E: Executor> {
     pool: E,
     handler: Handler,
@@ -38,6 +42,11 @@ impl Server<ThreadPool> {
         }
     }
 
+    /// Listens to incoming streams, sending them to the threadpool
+    ///
+    /// # Panics
+    ///
+    /// Panics if it can't send the job to the threadpool
     pub fn listen_and_serve(&self) {
         println!("Listening to: {:?}", self.addr);
         let handler = self.handler;
@@ -59,6 +68,11 @@ fn internal_error<S: Stream>(mut stream: S) {
     // Something is wrong if it can't write to the stream
 }
 
+/// Tries to read request
+/// Then passes it to the handler
+/// Then writes the returning response to the stream
+///
+/// If any of the above failes, it will write an InternalServerError response to the stream
 fn handle_connection<S: Stream>(mut stream: S, handler: Handler) {
     let request = RequestParser::request_from_reader(&mut stream);
 
@@ -75,6 +89,8 @@ fn handle_connection<S: Stream>(mut stream: S, handler: Handler) {
     if response.write_to(&mut stream).is_err() {
         internal_error(stream);
     }
+
+    // TODO: Handle keep alive connection
 }
 
 #[cfg(test)]

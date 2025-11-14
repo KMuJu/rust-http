@@ -44,11 +44,16 @@ impl Response {
     pub fn internal_error() -> Response {
         Response {
             status_line: StatusLine::new(StatusCode::InternalServerError),
-            headers: Headers::new(),
+            headers: Headers::new(), // TODO: Add headers??
             body: Vec::new(),
         }
     }
 
+    /// Creates response from file
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if it fails to read from the file
     pub fn from_file(filename: &str, content_type: &str) -> io::Result<Response> {
         let filecontent = fs::read(filename)?;
         let mut headers = Headers::new();

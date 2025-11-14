@@ -91,7 +91,16 @@ impl Headers {
         self.0.is_empty()
     }
 
-    pub fn parse(&mut self, bytes: &[u8]) -> Result<usize, HeadersError> {
+    /// Parses one field line of the headers
+    /// Follows RFC 9112 Section 5
+    ///
+    /// field-line   = field-name ":" OWS field-value OWS
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if it does not follow the format above,
+    /// or the values in field-name or field-value does not follow RFC 9110 Section 5.5
+    pub fn parse_one(&mut self, bytes: &[u8]) -> Result<usize, HeadersError> {
         let end_of_line = bytes.windows(CRLF.len()).position(|w| w == CRLF);
         let Some(end) = end_of_line else {
             return Ok(0);
@@ -154,30 +163,30 @@ mod tests {
     fn test_header_parse() -> Result<(), HeadersError> {
         let input = b"Host: localhost:42069".to_vec();
         let mut header = Headers::new();
-        let n = header.parse(&input)?;
+        let n = header.parse_one(&input)?;
         assert_eq!(n, 0);
 
         let input = b"\r\n".to_vec();
         let mut header = Headers::new();
-        let n = header.parse(&input)?;
+        let n = header.parse_one(&input)?;
         assert_eq!(n, 2);
 
         let input = b"Host: localhost:42069\r\n".to_vec();
         let mut header = Headers::new();
-        let n = header.parse(&input)?;
+        let n = header.parse_one(&input)?;
         assert_eq!(header.get("Host"), Some(&"localhost:42069".to_string()));
         assert_eq!(header.get("host"), Some(&"localhost:42069".to_string()));
         assert_eq!(n, 23);
 
         let input = b"Host : localhost:42069\r\n".to_vec();
         let mut header = Headers::new();
-        let res = header.parse(&input);
+        let res = header.parse_one(&input);
         assert!(res.is_err());
 
         let mut input = b"Host : localhost:42069\r\n".to_vec();
         input[0] = 1; // Invalid field value byte
         let mut header = Headers::new();
-        let res = header.parse(&input);
+        let res = header.parse_one(&input);
         assert!(res.is_err());
 
         Ok(())
