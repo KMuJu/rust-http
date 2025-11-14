@@ -10,7 +10,7 @@ pub enum StatusCode {
 }
 
 impl StatusCode {
-    pub fn to_bytes(&self) -> String {
+    pub fn to_code(&self) -> String {
         match self {
             Self::Ok => "200",
             Self::BadRequest => "400",
@@ -59,7 +59,7 @@ impl StatusLine {
             w,
             "HTTP/{} {} {}\r\n",
             self.version,
-            self.status_code.to_bytes(),
+            self.status_code.to_code(),
             self.status_code.to_reason()
         )?;
         Ok(())
