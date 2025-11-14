@@ -1,0 +1,35 @@
+Server Software:
+Server Hostname:        localhost
+Server Port:            42069
+
+Document Path:          /
+Document Length:        236 bytes
+
+Concurrency Level:      100
+Time taken for tests:   1.644 seconds
+Complete requests:      10000
+Failed requests:        0
+Total transferred:      3200000 bytes
+HTML transferred:       2360000 bytes
+Requests per second:    6082.40 [#/sec] (mean)
+Time per request:       16.441 [ms] (mean)
+Time per request:       0.164 [ms] (mean, across all concurrent requests)
+Transfer rate:          1900.75 [Kbytes/sec] received
+
+Connection Times (ms)
+              min  mean[+/-sd] median   max
+Connect:        0    0   0.3      0       4
+Processing:     7   16   1.8     16      27
+Waiting:        0   16   1.8     15      27
+Total:          7   16   1.9     16      29
+
+Percentage of the requests served within a certain time (ms)
+  50%     16
+  66%     16
+  75%     17
+  80%     18
+  90%     19
+  95%     20
+  98%     22
+  99%     22
+ 100%     29 (longest request)
