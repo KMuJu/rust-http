@@ -6,7 +6,6 @@ Uses a threadpool to handle incomming requests
 
 - Trailers
 - Other transfer encodings other than chunked
-- Keep alive connections
 - Streaming responses
 - Routing
 

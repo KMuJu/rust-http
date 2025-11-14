@@ -10,7 +10,7 @@ use std::{
 };
 
 use crate::{
-    message::{Request, RequestParser, Response, ResponseBuilder, StatusCode},
+    message::{Request, RequestError, RequestParser, Response, ResponseBuilder, StatusCode},
     server::threadpool::Executor,
 };
 
@@ -64,8 +64,10 @@ fn internal_error<S: Stream>(stream: &mut S) {
     builder.set_status_code(StatusCode::InternalServerError);
     let mut response = builder.build();
     let r = response.write_to(stream);
-    assert!(r.is_ok(), "Failed to write internal error to tcp stream");
-    // Something is wrong if it can't write to the stream
+    if r.is_err() {
+        eprintln!("Failed to write internal error to tcp stream");
+        // Something is wrong if it can't write to the stream
+    }
 }
 
 /// Tries to read request
@@ -74,25 +76,52 @@ fn internal_error<S: Stream>(stream: &mut S) {
 ///
 /// If any of the above failes, it will write an InternalServerError response to the stream
 fn handle_connection<S: Stream>(mut stream: S, handler: Handler) {
-    let request = RequestParser::request_from_reader(&mut stream);
+    loop {
+        let request = RequestParser::request_from_reader(&mut stream);
 
-    let Ok(request) = request else {
-        internal_error(&mut stream);
-        return;
-    };
+        let request = match request {
+            Ok(req) => req,
+            Err(RequestError::MalformedRequest) => {
+                eprintln!("Got EOF while parsing");
+                break;
+            }
+            Err(_) => {
+                internal_error(&mut stream);
+                break;
+            }
+        };
 
-    let response = handler(&request);
+        let response = handler(&request);
 
-    let Ok(mut response) = response else {
-        internal_error(&mut stream);
-        return;
-    };
+        let mut response = match response {
+            Ok(resp) => resp,
+            Err(e) => {
+                eprintln!("Error handling request: {e:?}");
+                internal_error(&mut stream);
+                break;
+            }
+        };
 
-    if response.write_to(&mut stream).is_err() {
-        internal_error(&mut stream);
+        if response.write_to(&mut stream).is_err() {
+            internal_error(&mut stream);
+            break;
+        }
+
+        if should_close(&request, &response) {
+            break;
+        }
     }
+    println!("Closing connection");
+}
 
-    // TODO: Handle keep alive connection
+fn should_close(req: &Request, resp: &Response) -> bool {
+    if req.headers.field_contains_value("Connection", "close") {
+        return true;
+    }
+    if resp.headers.field_contains_value("Connection", "close") {
+        return true;
+    }
+    false
 }
 
 #[cfg(test)]
@@ -114,6 +143,10 @@ mod test {
     fn fake_handler(_: &Request) -> Result<Response, ServerError> {
         let mut builder = ResponseBuilder::new();
         builder.add_to_body(b"Hello")?;
+        Ok(builder.build())
+    }
+    fn fake_handler_no_body(_: &Request) -> Result<Response, ServerError> {
+        let builder = ResponseBuilder::new();
         Ok(builder.build())
     }
 
@@ -162,11 +195,12 @@ mod test {
 
         let mut stream = TcpStream::connect(addr).unwrap();
         stream
-            .write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")
+            .write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
             .unwrap();
 
         let mut buf = Vec::new();
         stream.read_to_end(&mut buf).unwrap();
+
         let mut builder = ResponseBuilder::new();
         builder.add_to_body(b"Hello").unwrap();
         let mut response = builder.build();
@@ -177,5 +211,60 @@ mod test {
         let expected = String::from_utf8_lossy(&expected);
 
         assert_eq!(output, expected,);
+    }
+
+    fn read_one_response(stream: &mut TcpStream) -> String {
+        let mut buf = Vec::new();
+        let mut tmp = [0u8; 512];
+
+        loop {
+            let n = stream.read(&mut tmp).unwrap();
+            if n == 0 {
+                break; // server closed (unexpected for keep-alive)
+            }
+            buf.extend_from_slice(&tmp[..n]);
+
+            // crude but works: detect full HTTP response by CRLF CRLF
+            if buf.windows(4).any(|w| w == b"\r\n\r\n") {
+                break;
+            }
+        }
+
+        String::from_utf8_lossy(&buf).to_string()
+    }
+
+    #[test]
+    fn test_server_handles_keep_alive() {
+        let server = Server::test(fake_handler_no_body);
+        let addr = server.listener.local_addr().unwrap();
+
+        thread::spawn(move || {
+            if let Ok((stream, _)) = server.listener.accept() {
+                handle_connection(stream, server.handler);
+            }
+        });
+
+        let mut stream = TcpStream::connect(addr).unwrap();
+        stream
+            .write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")
+            .unwrap();
+
+        let resp1 = read_one_response(&mut stream);
+
+        let mut response = ResponseBuilder::new().build();
+
+        let mut expected = Vec::new();
+        response.write_to(&mut expected).unwrap();
+        let expected = String::from_utf8_lossy(&expected);
+
+        assert_eq!(resp1, expected);
+
+        stream
+            .write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")
+            .unwrap();
+
+        let resp2 = read_one_response(&mut stream);
+
+        assert_eq!(resp2, expected);
     }
 }

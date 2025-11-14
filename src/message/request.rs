@@ -287,10 +287,6 @@ impl RequestParser {
             // TODO: Handle EOF, ie. n = 0
             if n == 0 {
                 eprint!("Read 0 bytes");
-                println!(
-                    "Buf: {}",
-                    String::from_utf8_lossy(&buf[..read]).escape_debug()
-                );
                 return Err(RequestError::MalformedRequest);
             }
             let consumed = parser.parse(&buf[..read + n])?;
