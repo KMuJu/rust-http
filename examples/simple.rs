@@ -6,7 +6,7 @@ use rust_http::server::{Server, ServerError};
 use rust_http::message::{Request, Response};
 
 fn main() {
-    let server = Server::new("localhost:42069", handle_request);
+    let server = Server::new("localhost:42069", handle_request, 12);
     server.listen_and_serve();
 }
 

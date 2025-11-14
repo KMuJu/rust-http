@@ -31,8 +31,8 @@ pub struct Server<E: Executor> {
 type Handler = fn(&Request) -> Result<Response, ServerError>;
 
 impl Server<ThreadPool> {
-    pub fn new(addr: &str, handler: Handler) -> Server<ThreadPool> {
-        let pool = ThreadPool::new(8);
+    pub fn new(addr: &str, handler: Handler, threads: usize) -> Server<ThreadPool> {
+        let pool = ThreadPool::new(threads);
         let listener = TcpListener::bind(addr).expect("Could not bind to addr: {addr}");
         Server {
             pool,
