@@ -153,6 +153,7 @@ impl Headers {
 
     pub fn write_to<W: Write>(&self, mut w: W) -> Result<(), io::Error> {
         if self.0.is_empty() {
+            write!(w, "\r\n")?;
             return Ok(());
         }
         // TODO: Consider switching to BTreeMap
@@ -240,5 +241,14 @@ mod tests {
         assert!(res, "Headers should contain b");
         let res = headers.field_contains_value("a", "c");
         assert!(!res, "Headers should not contain c");
+    }
+
+    #[test]
+    fn test_empty_header() -> io::Result<()> {
+        let mut buf = Vec::new();
+        let headers = Headers::new();
+        headers.write_to(&mut buf)?;
+        assert_eq!(buf, b"\r\n");
+        Ok(())
     }
 }

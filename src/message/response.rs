@@ -90,7 +90,7 @@ mod tests {
         response.headers = Headers::new(); // Remove default headers, these can change
         let mut buf = Vec::new();
         response.write_to(&mut buf)?;
-        assert_eq!(buf, b"HTTP/1.1 200 Ok\r\n");
+        assert_eq!(buf, b"HTTP/1.1 200 Ok\r\n\r\n");
 
         response.headers.add("Content-Type", "text/plain");
         buf = Vec::new();
