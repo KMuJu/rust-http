@@ -6,7 +6,7 @@ pub use threadpool::ThreadPool;
 
 use std::{
     io::{Read, Write},
-    net::{TcpListener, TcpStream},
+    net::TcpListener,
 };
 
 use crate::{
@@ -98,7 +98,7 @@ fn handle_connection<S: Stream>(mut stream: S, handler: Handler) {
 #[cfg(test)]
 mod test {
     use pretty_assertions::assert_eq;
-    use std::thread;
+    use std::{net::TcpStream, thread};
 
     use super::*;
 

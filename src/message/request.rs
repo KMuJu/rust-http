@@ -1,4 +1,4 @@
-use std::{io::Read, usize};
+use std::io::Read;
 
 use crate::message::{Headers, Method, RequestError, RequestLine, error::HeadersError};
 
