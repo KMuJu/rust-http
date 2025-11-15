@@ -48,10 +48,13 @@ impl Server<ThreadPool> {
     ///
     /// Panics if it can't send the job to the threadpool
     pub fn listen_and_serve(&self) {
-        println!("Listening to: {:?}", self.addr);
+        let addr = self.listener.local_addr().unwrap();
+        println!("Listening to: {:?}", addr);
         let handler = self.handler;
         for stream in self.listener.incoming() {
             let stream = stream.unwrap();
+            let addr = stream.peer_addr().unwrap();
+            println!("Got request from: {:?}", addr);
             self.pool.execute(move || {
                 handle_connection(stream, handler);
             });
