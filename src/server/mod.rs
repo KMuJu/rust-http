@@ -131,6 +131,8 @@ mod test {
 
     use super::*;
 
+    #[derive(Clone)]
+    struct FakeExecutor;
     impl Executor for FakeExecutor {
         fn execute<F>(&self, f: F)
         where
@@ -150,8 +152,6 @@ mod test {
         Ok(builder.build())
     }
 
-    #[derive(Clone)]
-    struct FakeExecutor;
     impl Server<FakeExecutor> {
         pub fn test(handler: Handler) -> Server<FakeExecutor> {
             let listener = TcpListener::bind("127.0.0.1:0").unwrap();
