@@ -2,6 +2,10 @@
 
 Uses a threadpool to handle incomming requests
 
+## Usage
+
+Examples can be found in [examples](./examples/)
+
 ## Not supported
 
 - Trailers
@@ -11,4 +15,8 @@ Uses a threadpool to handle incomming requests
 
 ## Future additions
 
+- Async runtime such as tokio, instead of a threadpool
+  This will decrease time waiting for requests.
+  Since the server now accepts keep-alive connections,
+  the server can currently only #threads alive connections
 - HTTP client to be able to send requests
