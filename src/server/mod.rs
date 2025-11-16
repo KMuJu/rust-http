@@ -1,43 +1,35 @@
 mod error;
-mod threadpool;
 
 pub use error::ServerError;
-pub use threadpool::ThreadPool;
 
-use std::{
-    io::{Read, Write},
-    net::TcpListener,
-};
+use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::net::TcpListener;
 
-use crate::{
-    message::{Request, RequestError, RequestParser, Response, ResponseBuilder, StatusCode},
-    server::threadpool::Executor,
-};
+use crate::message::{Request, RequestError, RequestParser, Response, ResponseBuilder, StatusCode};
 
-pub trait Stream: Read + Write + Send {}
-impl<T: Read + Write + Send> Stream for T {}
+pub trait Stream: AsyncRead + AsyncWrite + Unpin + Send {}
+impl<T: AsyncRead + AsyncWrite + Unpin + Send> Stream for T {}
 
 /// HTTP Server
 ///
 /// Uses a threadpool to handle requests
 ///
-pub struct Server<E: Executor> {
-    pool: E,
+pub struct Server {
     handler: Handler,
-    addr: String,
+    _addr: String,
     listener: TcpListener,
 }
 
 type Handler = fn(&Request) -> Result<Response, ServerError>;
 
-impl Server<ThreadPool> {
-    pub fn new(addr: &str, handler: Handler, threads: usize) -> Server<ThreadPool> {
-        let pool = ThreadPool::new(threads);
-        let listener = TcpListener::bind(addr).expect("Could not bind to addr: {addr}");
+impl Server {
+    pub async fn new(addr: &str, handler: Handler) -> Server {
+        let listener = TcpListener::bind(addr)
+            .await
+            .expect("Could not bind to addr: {addr}");
         Server {
-            pool,
             handler,
-            addr: addr.to_string(),
+            _addr: addr.to_string(),
             listener,
         }
     }
@@ -47,26 +39,28 @@ impl Server<ThreadPool> {
     /// # Panics
     ///
     /// Panics if it can't send the job to the threadpool
-    pub fn listen_and_serve(&self) {
+    pub async fn listen_and_serve(&self) -> Result<(), ServerError> {
         let addr = self.listener.local_addr().unwrap();
         println!("Listening to: {:?}", addr);
         let handler = self.handler;
-        for stream in self.listener.incoming() {
-            let stream = stream.unwrap();
+
+        loop {
+            let (stream, _) = self.listener.accept().await?;
             let addr = stream.peer_addr().unwrap();
             println!("Got request from: {:?}", addr);
-            self.pool.execute(move || {
-                handle_connection(stream, handler);
+
+            tokio::spawn(async move {
+                handle_connection(stream, handler).await;
             });
         }
     }
 }
 
-fn internal_error<S: Stream>(stream: &mut S) {
+async fn internal_error<S: Stream>(stream: &mut S) {
     let mut builder = ResponseBuilder::new();
     builder.set_status_code(StatusCode::InternalServerError);
     let mut response = builder.build();
-    let r = response.write_to(stream);
+    let r = response.write_to(stream).await;
     if r.is_err() {
         eprintln!("Failed to write internal error to tcp stream");
         // Something is wrong if it can't write to the stream
@@ -78,9 +72,9 @@ fn internal_error<S: Stream>(stream: &mut S) {
 /// Then writes the returning response to the stream
 ///
 /// If any of the above failes, it will write an InternalServerError response to the stream
-fn handle_connection<S: Stream>(mut stream: S, handler: Handler) {
+async fn handle_connection<S: Stream>(mut stream: S, handler: Handler) {
     loop {
-        let request = RequestParser::request_from_reader(&mut stream);
+        let request = RequestParser::request_from_reader(&mut stream).await;
 
         let request = match request {
             Ok(req) => req,
@@ -89,7 +83,7 @@ fn handle_connection<S: Stream>(mut stream: S, handler: Handler) {
                 break;
             }
             Err(_) => {
-                internal_error(&mut stream);
+                internal_error(&mut stream).await;
                 break;
             }
         };
@@ -100,13 +94,13 @@ fn handle_connection<S: Stream>(mut stream: S, handler: Handler) {
             Ok(resp) => resp,
             Err(e) => {
                 eprintln!("Error handling request: {e:?}");
-                internal_error(&mut stream);
+                internal_error(&mut stream).await;
                 break;
             }
         };
 
-        if response.write_to(&mut stream).is_err() {
-            internal_error(&mut stream);
+        if response.write_to(&mut stream).await.is_err() {
+            internal_error(&mut stream).await;
             break;
         }
 
@@ -118,6 +112,9 @@ fn handle_connection<S: Stream>(mut stream: S, handler: Handler) {
 }
 
 fn should_close(req: &Request, resp: &Response) -> bool {
+    if req.line.version == "1.0" && !req.headers.field_contains_value("Connection", "keep-alive") {
+        return true;
+    }
     if req.headers.field_contains_value("Connection", "close") {
         return true;
     }
@@ -130,20 +127,10 @@ fn should_close(req: &Request, resp: &Response) -> bool {
 #[cfg(test)]
 mod test {
     use pretty_assertions::assert_eq;
-    use std::{net::TcpStream, thread};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpStream;
 
     use super::*;
-
-    #[derive(Clone)]
-    struct FakeExecutor;
-    impl Executor for FakeExecutor {
-        fn execute<F>(&self, f: F)
-        where
-            F: FnOnce() + Send + 'static,
-        {
-            f();
-        }
-    }
 
     fn fake_handler(_: &Request) -> Result<Response, ServerError> {
         let mut builder = ResponseBuilder::new();
@@ -155,20 +142,19 @@ mod test {
         Ok(builder.build())
     }
 
-    impl Server<FakeExecutor> {
-        pub fn test(handler: Handler) -> Server<FakeExecutor> {
-            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    impl Server {
+        pub async fn test(handler: Handler) -> Server {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
             Server {
-                pool: FakeExecutor,
                 handler,
-                addr: "".to_string(),
+                _addr: "".to_string(),
                 listener,
             }
         }
     }
 
-    #[test]
-    fn test_handle_connection_ok() {
+    #[tokio::test]
+    async fn test_handle_connection_ok() {
         use std::io::Cursor;
 
         let mut fake_stream = Cursor::new(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n".to_vec());
@@ -179,49 +165,50 @@ mod test {
             Ok(builder.build())
         }
 
-        handle_connection(&mut fake_stream, test_handler);
+        handle_connection(&mut fake_stream, test_handler).await;
 
         let written = fake_stream.into_inner();
         assert!(String::from_utf8_lossy(&written).contains("ok"));
     }
 
-    #[test]
-    fn test_server_handles_request() {
-        let server = Server::test(fake_handler);
+    #[tokio::test]
+    async fn test_server_handles_request() {
+        let server = Server::test(fake_handler).await;
         let addr = server.listener.local_addr().unwrap();
 
-        thread::spawn(move || {
-            if let Ok((stream, _)) = server.listener.accept() {
-                handle_connection(stream, server.handler);
+        tokio::spawn(async move {
+            if let Ok((stream, _)) = server.listener.accept().await {
+                handle_connection(stream, server.handler).await;
             }
         });
 
-        let mut stream = TcpStream::connect(addr).unwrap();
+        let mut stream = TcpStream::connect(addr).await.unwrap();
         stream
             .write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+            .await
             .unwrap();
 
         let mut buf = Vec::new();
-        stream.read_to_end(&mut buf).unwrap();
+        stream.read_to_end(&mut buf).await.unwrap();
 
         let mut builder = ResponseBuilder::new();
         builder.add_to_body(b"Hello").unwrap();
         let mut response = builder.build();
 
         let mut expected = Vec::new();
-        response.write_to(&mut expected).unwrap();
+        response.write_to(&mut expected).await.unwrap();
         let output = String::from_utf8_lossy(&buf);
         let expected = String::from_utf8_lossy(&expected);
 
         assert_eq!(output, expected,);
     }
 
-    fn read_one_response(stream: &mut TcpStream) -> String {
+    async fn read_one_response(stream: &mut TcpStream) -> String {
         let mut buf = Vec::new();
         let mut tmp = [0u8; 512];
 
         loop {
-            let n = stream.read(&mut tmp).unwrap();
+            let n = stream.read(&mut tmp).await.unwrap();
             if n == 0 {
                 break; // server closed (unexpected for keep-alive)
             }
@@ -236,37 +223,39 @@ mod test {
         String::from_utf8_lossy(&buf).to_string()
     }
 
-    #[test]
-    fn test_server_handles_keep_alive() {
-        let server = Server::test(fake_handler_no_body);
+    #[tokio::test]
+    async fn test_server_handles_keep_alive() {
+        let server = Server::test(fake_handler_no_body).await;
         let addr = server.listener.local_addr().unwrap();
 
-        thread::spawn(move || {
-            if let Ok((stream, _)) = server.listener.accept() {
-                handle_connection(stream, server.handler);
+        tokio::spawn(async move {
+            if let Ok((stream, _)) = server.listener.accept().await {
+                handle_connection(stream, server.handler).await;
             }
         });
 
-        let mut stream = TcpStream::connect(addr).unwrap();
+        let mut stream = TcpStream::connect(addr).await.unwrap();
         stream
             .write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")
+            .await
             .unwrap();
 
-        let resp1 = read_one_response(&mut stream);
+        let resp1 = read_one_response(&mut stream).await;
 
         let mut response = ResponseBuilder::new().build();
 
         let mut expected = Vec::new();
-        response.write_to(&mut expected).unwrap();
+        response.write_to(&mut expected).await.unwrap();
         let expected = String::from_utf8_lossy(&expected);
 
         assert_eq!(resp1, expected);
 
         stream
             .write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n")
+            .await
             .unwrap();
 
-        let resp2 = read_one_response(&mut stream);
+        let resp2 = read_one_response(&mut stream).await;
 
         assert_eq!(resp2, expected);
     }

@@ -1,4 +1,4 @@
-use std::io::Read;
+use tokio::io::{AsyncRead, AsyncReadExt};
 
 use crate::message::{Headers, Method, RequestError, RequestLine, error::HeadersError};
 
@@ -266,7 +266,10 @@ impl RequestParser {
     /// # Errors
     ///
     /// This function will return an error if receives EOF or if there is an error parsing the data
-    pub fn request_from_reader(reader: &mut impl Read) -> Result<Request, RequestError> {
+    pub async fn request_from_reader<R>(reader: &mut R) -> Result<Request, RequestError>
+    where
+        R: AsyncRead + Unpin,
+    {
         let mut buf = [0u8; 1024];
         let mut read: usize = 0;
         let mut parser = RequestParser {
@@ -281,12 +284,13 @@ impl RequestParser {
         };
         // This loop handle the reading, allowing the parse function to only worry about the data
         while parser.state != ParserState::Done {
-            let n = reader.read(&mut buf[read..])?;
+            let n = reader.read(&mut buf[read..]).await?;
             // TODO: Handle EOF, ie. n = 0
             if n == 0 {
                 eprint!("Read 0 bytes");
                 return Err(RequestError::MalformedRequest);
             }
+
             let consumed = parser.parse(&buf[..read + n])?;
             read += n;
             if consumed == 0 {
@@ -311,10 +315,10 @@ mod tests {
     use crate::message::method::Method;
     use crate::message::test_utils::batch_reader::BatchReader;
 
-    #[test]
-    fn test_request_parser() -> Result<(), RequestError> {
+    #[tokio::test]
+    async fn test_request_parser() -> Result<(), RequestError> {
         let input = b"GET / HTTP/1.1\r\nHost: localhost:42069\r\nUser-Agent: curl/7.81.0\r\nAccept: */*\r\n\r\n".to_vec();
-        let rq = RequestParser::request_from_reader(&mut Cursor::new(input))?;
+        let rq = RequestParser::request_from_reader(&mut Cursor::new(input)).await?;
         assert_eq!(rq.line.method, Method::Get);
         assert_eq!(rq.line.url, "/".to_string());
         assert_eq!(rq.line.version, "1.1".to_string());
@@ -327,11 +331,11 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_request_parser_batch_no_body() -> Result<(), RequestError> {
+    #[tokio::test]
+    async fn test_request_parser_batch_no_body() -> Result<(), RequestError> {
         let input = b"GET / HTTP/1.1\r\nHost: localhost:42069\r\nUser-Agent: curl/7.81.0\r\nAccept: */*\r\n\r\n".to_vec();
         let mut batch_reader = BatchReader::new(input, 3);
-        let rq = RequestParser::request_from_reader(&mut batch_reader)?;
+        let rq = RequestParser::request_from_reader(&mut batch_reader).await?;
         assert_eq!(rq.line.method, Method::Get);
         assert_eq!(rq.line.url, "/".to_string());
         assert_eq!(rq.line.version, "1.1".to_string());
@@ -345,7 +349,7 @@ mod tests {
 
         let input = b"POST /post HTTP/1.1\r\nHost: localhost:42069\r\nUser-Agent: curl/7.81.0\r\nAccept: */*\r\n\r\n".to_vec();
         let mut batch_reader = BatchReader::new(input, 3);
-        let rq = RequestParser::request_from_reader(&mut batch_reader)?;
+        let rq = RequestParser::request_from_reader(&mut batch_reader).await?;
         assert_eq!(rq.line.method, Method::Post);
         assert_eq!(rq.line.url, "/post".to_string());
         assert_eq!(rq.line.version, "1.1".to_string());
@@ -360,12 +364,12 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_request_parser_batch_with_body() -> Result<(), RequestError> {
+    #[tokio::test]
+    async fn test_request_parser_batch_with_body() -> Result<(), RequestError> {
         let input =
             b"GET / HTTP/1.1\r\nHost: localhost:42069\r\nContent-Length: 1\r\n\r\nA".to_vec();
         let mut batch_reader = BatchReader::new(input, 3);
-        let rq = RequestParser::request_from_reader(&mut batch_reader)?;
+        let rq = RequestParser::request_from_reader(&mut batch_reader).await?;
         assert_eq!(rq.line.method, Method::Get);
         assert_eq!(rq.line.url, "/".to_string());
         assert_eq!(rq.line.version, "1.1".to_string());
@@ -376,7 +380,7 @@ mod tests {
         let input =
             b"GET / HTTP/1.1\r\nHost: localhost:42069\r\nContent-Length: 2\r\n\r\nA".to_vec();
         let mut batch_reader = BatchReader::new(input, 3);
-        let rq = RequestParser::request_from_reader(&mut batch_reader);
+        let rq = RequestParser::request_from_reader(&mut batch_reader).await;
 
         assert!(rq.is_err());
         match rq {
@@ -446,13 +450,13 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_chunked_encoding() -> Result<(), RequestError> {
+    #[tokio::test]
+    async fn test_chunked_encoding() -> Result<(), RequestError> {
         let input =
             b"GET / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n2\r\nAB\r\nA\r\n1234567890\r\n0\r\n\r\n"
                 .to_vec();
         let mut batch_reader = BatchReader::new(input, 3);
-        let rq = RequestParser::request_from_reader(&mut batch_reader)?;
+        let rq = RequestParser::request_from_reader(&mut batch_reader).await?;
         assert_eq!(String::from_utf8_lossy(&rq.body), "AB1234567890");
         assert_eq!(rq.body.len(), 12);
 
@@ -460,7 +464,7 @@ mod tests {
             b"GET / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n2\r\nAB\r\n4\r\n1\r\n1\r\n0\r\n\r\n"
                 .to_vec();
         let mut batch_reader = BatchReader::new(input, 3);
-        let rq = RequestParser::request_from_reader(&mut batch_reader)?;
+        let rq = RequestParser::request_from_reader(&mut batch_reader).await?;
         assert_eq!(String::from_utf8_lossy(&rq.body), "AB1\r\n1");
         assert_eq!(rq.body.len(), 6);
 
@@ -468,7 +472,7 @@ mod tests {
             b"GET / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n2\r\nABC\r\n4\r\n1234\r\n0\r\n\r\n"
                 .to_vec();
         let mut batch_reader = BatchReader::new(input, 3);
-        let rq = RequestParser::request_from_reader(&mut batch_reader);
+        let rq = RequestParser::request_from_reader(&mut batch_reader).await;
         assert!(rq.is_err());
 
         Ok(())

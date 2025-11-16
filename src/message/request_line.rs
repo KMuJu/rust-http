@@ -24,10 +24,9 @@ impl RequestLine {
     /// This function will return an error if it does not follow the above format
     pub fn parse(bytes: &[u8]) -> Result<Option<(RequestLine, usize)>, RequestLineError> {
         let end_of_line = bytes.windows(CRLF.len()).position(|w| w == CRLF);
-        if end_of_line.is_none() {
+        let Some(end) = end_of_line else {
             return Ok(None);
-        }
-        let end = end_of_line.unwrap();
+        };
         let current_data = &bytes[..end];
 
         let parts = current_data.split(|&b| b == b' ').collect::<Vec<&[u8]>>();

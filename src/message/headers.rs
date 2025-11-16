@@ -3,6 +3,8 @@ use std::{
     io::{self, Write},
 };
 
+use tokio::io::AsyncWriteExt;
+
 use crate::message::error::HeadersError;
 
 #[derive(Debug)]
@@ -151,20 +153,22 @@ impl Headers {
         Ok(end + CRLF.len())
     }
 
-    pub fn write_to<W: Write>(&self, mut w: W) -> Result<(), io::Error> {
+    pub async fn write_to<W: AsyncWriteExt + Unpin>(&self, mut w: W) -> Result<(), io::Error> {
         if self.0.is_empty() {
-            write!(w, "\r\n")?;
+            w.write_all(b"\r\n").await?;
             return Ok(());
         }
         // TODO: Consider switching to BTreeMap
         let mut keys: Vec<_> = self.0.keys().collect();
         keys.sort();
 
+        let mut buf = Vec::new();
         for key in keys {
             let value = &self.0[key];
-            write!(w, "{}: {}\r\n", key, value)?;
+            write!(buf, "{}: {}\r\n", key, value)?;
         }
-        w.write_all(b"\r\n")?;
+        w.write_all(&buf).await?;
+        w.write_all(b"\r\n").await?;
         Ok(())
     }
 }
@@ -213,17 +217,17 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_write_to() -> io::Result<()> {
+    #[tokio::test]
+    async fn test_write_to() -> io::Result<()> {
         let mut buf = Vec::new();
         let mut headers = Headers::new();
         headers.add("a", "b");
-        headers.write_to(&mut buf)?;
+        headers.write_to(&mut buf).await?;
         assert_eq!(buf, b"a: b\r\n\r\n");
 
         buf = Vec::new();
         headers.add("c", "d");
-        headers.write_to(&mut buf)?;
+        headers.write_to(&mut buf).await?;
         assert_eq!(buf, b"a: b\r\nc: d\r\n\r\n");
 
         Ok(())
@@ -243,11 +247,11 @@ mod tests {
         assert!(!res, "Headers should not contain c");
     }
 
-    #[test]
-    fn test_empty_header() -> io::Result<()> {
+    #[tokio::test]
+    async fn test_empty_header() -> io::Result<()> {
         let mut buf = Vec::new();
         let headers = Headers::new();
-        headers.write_to(&mut buf)?;
+        headers.write_to(&mut buf).await?;
         assert_eq!(buf, b"\r\n");
         Ok(())
     }
