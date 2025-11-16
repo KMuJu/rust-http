@@ -29,7 +29,6 @@ enum ParserState {
     RequestLine,
     Headers,
     Body,
-    Error,
 }
 
 /// Different encoding types supported
@@ -157,7 +156,7 @@ impl RequestParser {
                     return Ok(0);
                 }
 
-                if bytes[size] != b'\r' && bytes[size + 1] != b'\n' {
+                if bytes[size] != b'\r' || bytes[size + 1] != b'\n' {
                     return Err(RequestError::MalformedChunkedBody);
                 }
 
@@ -256,7 +255,6 @@ impl RequestParser {
 
                     read += n;
                 }
-                ParserState::Error => {}
             }
         }
 
