@@ -1,12 +1,12 @@
 use tokio::io::{AsyncRead, AsyncReadExt};
 
-use crate::message::{Headers, Method, RequestError, RequestLine, error::HeadersError};
+use crate::message::{Headers, Method, RequestError, RequestLine, body::BodyParser};
 
 #[derive(Debug)]
 pub struct Request {
     pub line: RequestLine,
     pub headers: Headers,
-    body: Vec<u8>,
+    pub(crate) body: Vec<u8>,
 }
 
 impl Request {
@@ -31,177 +31,24 @@ enum ParserState {
     Body,
 }
 
-/// Different encoding types supported
-#[derive(Debug, PartialEq, Eq)]
-enum Encoding {
-    Nothing(usize), // Stores the size of the body. No body is size 0
-    Chunked,
-}
-
-/// Used to store state for parsing chunked body
-#[derive(Debug, PartialEq, Eq)]
-enum ChunkedState {
-    Size,        // Going to parse the size
-    Data(usize), // Going to parse the body
-}
-
 #[derive(Debug)]
 pub struct RequestParser {
     request: Request,
     state: ParserState,
-    encoding: Option<Encoding>,
-    chuncked_state: ChunkedState,
+    body_parser: BodyParser,
 }
 
-const CRLF: &[u8; 2] = b"\r\n";
-
 impl RequestParser {
-    /// Sets the encoding type of the parser
-    ///
-    /// Follows https://datatracker.ietf.org/doc/html/rfc9112#name-message-body-length
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if .
-    fn set_encoding(&mut self) -> Result<(), RequestError> {
-        if self.encoding.is_some() {
-            return Ok(());
-        }
-        let transmission = self.request.headers.get("Transfer-Encoding");
-        let content = self.request.headers.get("Content-Length");
-
-        if transmission.is_some() && content.is_some() {
-            return Err(RequestError::Header(HeadersError::InvalidHeaderFields));
-        }
-
-        if let Some(transmission) = transmission {
-            if transmission == "chunked" {
-                self.encoding = Some(Encoding::Chunked);
-            } else {
-                return Err(RequestError::Header(HeadersError::InvalidHeaderFields));
-            }
-        } else if let Some(length) = content {
-            let cl = length.parse::<usize>();
-            if let Ok(cl) = cl {
-                self.encoding = Some(Encoding::Nothing(cl));
-                return Ok(());
-            }
-
-            // if all values seperated by ',' is equal, and a number, then this value will be used
-            let mut values = length.split(',').map(|v| v.trim());
-            let Some(first) = values.next() else {
-                return Err(RequestError::Header(HeadersError::InvalidHeaderFields));
-            };
-            if !values.all(|v| v == first) {
-                return Err(RequestError::Header(HeadersError::InvalidHeaderFields));
-            }
-            let len = first
-                .parse::<usize>()
-                .map_err(|_| RequestError::Header(HeadersError::InvalidContentLength))?;
-            self.encoding = Some(Encoding::Nothing(len));
-        } else {
-            self.encoding = Some(Encoding::Nothing(0))
-        }
-
-        Ok(())
-    }
-
-    /// Parses the chunked body, following 7.1 in RFC9112
-    /// Example pattern (with different stuff on different lines)
-    ///
-    /// 2\r\n
-    /// AB\r\n
-    /// A\r\n
-    /// 1234567890\r\n
-    /// 0\r\n
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if there is an invalid chunk-size
-    fn parse_chunked_body(&mut self, bytes: &[u8]) -> Result<usize, RequestError> {
-        let end_of_line = bytes.windows(CRLF.len()).position(|w| w == CRLF);
-        let Some(end_of_line) = end_of_line else {
-            return Ok(0);
-        };
-        match self.chuncked_state {
-            ChunkedState::Size => {
-                // TODO: Implement chunk extensions
-                // Currently ignores them
-                let size_line = &bytes[..end_of_line];
-                match usize::from_str_radix(&String::from_utf8_lossy(size_line), 16) {
-                    Ok(size) => {
-                        self.chuncked_state = ChunkedState::Data(size);
-
-                        // Then we are done
-                        if size == 0 {
-                            self.state = ParserState::Done;
-                            self.request
-                                .headers
-                                .set("Content-Length", self.request.body.len().to_string());
-
-                            // TODO: Will need to change if server supports more encodings
-                            // Is supposed to removed chunked from the header, but for now only
-                            // chunked is supported
-                            self.request.headers.remove("Transfer-Encoding");
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("Error parsing chunked-size: {e}");
-                        return Err(RequestError::MalformedChunkedBody);
-                    }
-                }
-            }
-            ChunkedState::Data(size) => {
-                if size + 2 >= bytes.len() {
-                    return Ok(0);
-                }
-
-                if bytes[size] != b'\r' || bytes[size + 1] != b'\n' {
-                    return Err(RequestError::MalformedChunkedBody);
-                }
-
-                let body = &bytes[..size];
-                self.request.body.extend_from_slice(body);
-                self.chuncked_state = ChunkedState::Size;
-                return Ok(size + CRLF.len());
-            }
-        }
-
-        Ok(end_of_line + CRLF.len())
-    }
-
-    /// Finds encoding type, then parses the incomming bytes based on that
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if it receives data that is longer than Content-Length,
-    /// or if there is invalid combination of headers
     fn parse_body(&mut self, bytes: &[u8]) -> Result<usize, RequestError> {
-        self.set_encoding()?;
-        match self.encoding {
-            // No body
-            Some(Encoding::Nothing(0)) => {
-                self.state = ParserState::Done;
-                Ok(0)
-            }
-            Some(Encoding::Nothing(len)) => {
-                if self.request.body.len() + bytes.len() > len {
-                    return Err(RequestError::BodyTooLong);
-                }
-
-                self.request.body.extend_from_slice(bytes);
-
-                if self.request.body.len() == len {
-                    self.state = ParserState::Done;
-                }
-
-                Ok(bytes.len())
-            }
-            Some(Encoding::Chunked) => self.parse_chunked_body(bytes),
-            None => Err(RequestError::Header(HeadersError::InvalidContentLength)), // TODO: Find better error type?
+        let body = &mut self.request.body;
+        let headers = &mut self.request.headers;
+        let (size, done) = self.body_parser.parse_body(body, headers, bytes)?;
+        if done {
+            self.state = ParserState::Done;
         }
-    }
 
+        Ok(size)
+    }
     /// Takes in the data not yet consumed and gives it to the correct parsing function.
     /// Returns how much data was consumed.
     /// Ignores trailers. TODO: add support for them
@@ -279,8 +126,7 @@ impl RequestParser {
                 headers: Headers::new(),
                 body: Vec::new(),
             },
-            encoding: None,
-            chuncked_state: ChunkedState::Size,
+            body_parser: BodyParser::new(),
         };
         // This loop handle the reading, allowing the parse function to only worry about the data
         while parser.state != ParserState::Done {
@@ -387,65 +233,6 @@ mod tests {
             Err(RequestError::MalformedRequest) => (),
             e => panic!("expected MalformedRequest, but was {:?}", e),
         }
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_set_content_length() -> Result<(), RequestError> {
-        let mut parser = RequestParser {
-            state: ParserState::RequestLine,
-            request: Request {
-                line: RequestLine::default(),
-                headers: Headers::new(),
-                body: Vec::new(),
-            },
-            encoding: None,
-            chuncked_state: ChunkedState::Size,
-        };
-
-        parser.request.headers.parse_one(b"Content-Length: 1\r\n")?;
-        parser.set_encoding()?;
-        assert_eq!(parser.encoding, Some(Encoding::Nothing(1)));
-
-        parser.encoding = None;
-        parser.request.headers = Headers::new();
-        parser
-            .request
-            .headers
-            .parse_one(b"Content-Length: 2,2,2\r\n")?;
-        parser.set_encoding()?;
-        assert_eq!(parser.encoding, Some(Encoding::Nothing(2)));
-
-        parser.encoding = None;
-        parser.request.headers = Headers::new();
-        parser
-            .request
-            .headers
-            .parse_one(b"Content-Length: 2,1,1\r\n")?;
-        let res = parser.set_encoding();
-        assert!(res.is_err());
-        assert_eq!(parser.encoding, None);
-
-        parser.encoding = None;
-        parser.request.headers = Headers::new();
-        parser
-            .request
-            .headers
-            .parse_one(b"Transfer-Encoding: chunked\r\n")?;
-        parser.set_encoding()?;
-        assert_eq!(parser.encoding, Some(Encoding::Chunked));
-
-        parser.encoding = None;
-        parser.request.headers = Headers::new();
-        parser.request.headers.parse_one(b"Content-Length: 2\r\n")?;
-        parser
-            .request
-            .headers
-            .parse_one(b"Transfer-Encoding: chunked\r\n")?;
-        let res = parser.set_encoding();
-        assert!(res.is_err());
-        assert_eq!(parser.encoding, None);
 
         Ok(())
     }
