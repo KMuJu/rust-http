@@ -1,4 +1,7 @@
-use crate::message::{Headers, RequestError, error::HeadersError};
+use crate::message::{
+    Headers, RequestError,
+    error::{BodyError, HeadersError},
+};
 
 /// Different encoding types supported
 #[derive(Debug, PartialEq, Eq)]
@@ -37,7 +40,7 @@ impl BodyParser {
     /// # Errors
     ///
     /// This function will return an error if .
-    fn set_encoding(&mut self, headers: &mut Headers) -> Result<(), RequestError> {
+    fn set_encoding(&mut self, headers: &mut Headers) -> Result<(), BodyError> {
         if self.encoding.is_some() {
             return Ok(());
         }
@@ -45,14 +48,14 @@ impl BodyParser {
         let content = headers.get("Content-Length");
 
         if transmission.is_some() && content.is_some() {
-            return Err(RequestError::Header(HeadersError::InvalidHeaderFields));
+            return Err(BodyError::Header(HeadersError::InvalidHeaderFields));
         }
 
         if let Some(transmission) = transmission {
             if transmission == "chunked" {
                 self.encoding = Some(Encoding::Chunked);
             } else {
-                return Err(RequestError::Header(HeadersError::InvalidHeaderFields));
+                return Err(BodyError::Header(HeadersError::InvalidHeaderFields));
             }
         } else if let Some(length) = content {
             let cl = length.parse::<usize>();
@@ -64,14 +67,14 @@ impl BodyParser {
             // if all values seperated by ',' is equal, and a number, then this value will be used
             let mut values = length.split(',').map(|v| v.trim());
             let Some(first) = values.next() else {
-                return Err(RequestError::Header(HeadersError::InvalidHeaderFields));
+                return Err(BodyError::Header(HeadersError::InvalidHeaderFields));
             };
             if !values.all(|v| v == first) {
-                return Err(RequestError::Header(HeadersError::InvalidHeaderFields));
+                return Err(BodyError::Header(HeadersError::InvalidHeaderFields));
             }
             let len = first
                 .parse::<usize>()
-                .map_err(|_| RequestError::Header(HeadersError::InvalidContentLength))?;
+                .map_err(|_| BodyError::Header(HeadersError::InvalidContentLength))?;
             self.encoding = Some(Encoding::Nothing(len));
         } else {
             self.encoding = Some(Encoding::Nothing(0))
@@ -97,7 +100,7 @@ impl BodyParser {
         body: &mut Vec<u8>,
         headers: &mut Headers,
         bytes: &[u8],
-    ) -> Result<(usize, bool), RequestError> {
+    ) -> Result<(usize, bool), BodyError> {
         let end_of_line = bytes.windows(CRLF.len()).position(|w| w == CRLF);
         let Some(end_of_line) = end_of_line else {
             return Ok((0, false));
@@ -128,7 +131,7 @@ impl BodyParser {
                     }
                     Err(e) => {
                         eprintln!("Error parsing chunked-size: {e}");
-                        return Err(RequestError::MalformedChunkedBody);
+                        return Err(BodyError::MalformedChunkedBody);
                     }
                 }
             }
@@ -138,7 +141,7 @@ impl BodyParser {
                 }
 
                 if bytes[size] != b'\r' || bytes[size + 1] != b'\n' {
-                    return Err(RequestError::MalformedChunkedBody);
+                    return Err(BodyError::MalformedChunkedBody);
                 }
 
                 let b = &bytes[..size];
@@ -162,7 +165,7 @@ impl BodyParser {
         body: &mut Vec<u8>,
         headers: &mut Headers,
         bytes: &[u8],
-    ) -> Result<(usize, bool), RequestError> {
+    ) -> Result<(usize, bool), BodyError> {
         self.set_encoding(headers)?;
         match self.encoding {
             // No body
@@ -172,7 +175,7 @@ impl BodyParser {
             }
             Some(Encoding::Nothing(len)) => {
                 if body.len() + bytes.len() > len {
-                    return Err(RequestError::BodyTooLong);
+                    return Err(BodyError::TooLong);
                 }
 
                 body.extend_from_slice(bytes);
@@ -182,7 +185,7 @@ impl BodyParser {
                 Ok((bytes.len(), done))
             }
             Some(Encoding::Chunked) => self.parse_chunked_body(body, headers, bytes),
-            None => Err(RequestError::Header(HeadersError::InvalidContentLength)), // TODO: Find better error type?
+            None => Err(BodyError::Header(HeadersError::InvalidContentLength)), // TODO: Find better error type?
         }
     }
 }
