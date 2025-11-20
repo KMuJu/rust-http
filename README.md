@@ -1,6 +1,7 @@
 # Simple http 1.1 server
 
-Uses a threadpool to handle incomming requests
+Uses a tokio async to handle incomming requests.
+Version with threadpool can be found in old_with_threads branch.
 
 ## Usage
 

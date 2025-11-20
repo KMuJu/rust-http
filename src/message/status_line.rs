@@ -1,5 +1,7 @@
 use std::io::{Result, Write};
 
+use tokio::io::AsyncWriteExt;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StatusCode {
     Ok,                  // 200
@@ -54,14 +56,18 @@ impl StatusLine {
     /// # Errors
     ///
     /// Returns Error if write fails
-    pub fn write_to<W: Write>(&self, mut w: W) -> Result<()> {
+    pub async fn write_to<W: AsyncWriteExt + Unpin>(&self, mut w: W) -> Result<()> {
+        let mut buf = Vec::new();
+
         write!(
-            w,
+            buf,
             "HTTP/{} {} {}\r\n",
             self.version,
             self.status_code.to_code(),
             self.status_code.to_reason()
         )?;
+
+        w.write_all(&buf).await?;
         Ok(())
     }
 }
@@ -71,11 +77,11 @@ mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
 
-    #[test]
-    fn test_status_line_write_to() -> Result<()> {
+    #[tokio::test]
+    async fn test_status_line_write_to() -> Result<()> {
         let status_line = StatusLine::new(StatusCode::Ok);
         let mut buf = Vec::new();
-        status_line.write_to(&mut buf)?;
+        status_line.write_to(&mut buf).await?;
         assert_eq!(buf, b"HTTP/1.1 200 Ok\r\n".to_vec());
 
         Ok(())

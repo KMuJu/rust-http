@@ -5,9 +5,13 @@ use rust_http::server::{Server, ServerError};
 
 use rust_http::message::{Request, Response};
 
-fn main() {
-    let server = Server::new("localhost:42069", handle_request, 12);
-    server.listen_and_serve();
+#[tokio::main]
+async fn main() {
+    let server = Server::new("localhost:42069", handle_request).await;
+    let r = server.listen_and_serve().await;
+    if let Err(e) = r {
+        eprint!("Error while listening: {e}")
+    }
 }
 
 fn handle_request(req: &Request) -> Result<Response, ServerError> {

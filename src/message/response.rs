@@ -1,7 +1,9 @@
 use std::{
     fs,
-    io::{self, Result, Write},
+    io::{self, Result},
 };
+
+use tokio::io::AsyncWriteExt;
 
 use crate::message::{Headers, StatusCode, StatusLine};
 
@@ -27,15 +29,15 @@ impl Response {
     /// # Errors
     ///
     /// Returns an error if any element fails to write
-    pub fn write_to<W: Write>(&mut self, mut w: W) -> Result<()> {
-        self.status_line.write_to(&mut w)?;
+    pub async fn write_to<W: AsyncWriteExt + Unpin>(&mut self, mut w: W) -> Result<()> {
+        self.status_line.write_to(&mut w).await?;
         if !self.body.is_empty() {
             self.headers
                 .add("Content-Length", self.body.len().to_string());
         }
-        self.headers.write_to(&mut w)?;
+        self.headers.write_to(&mut w).await?;
         if !self.body.is_empty() {
-            w.write_all(&self.body)?;
+            w.write_all(&self.body).await?;
         }
 
         Ok(())
@@ -69,13 +71,13 @@ impl Response {
 
 // TODO: Is this stupid??
 // Might also just provide body as the writer in the handlers
-impl Write for Response {
+impl io::Write for Response {
     fn write(&mut self, buf: &[u8]) -> Result<usize> {
-        self.body.write(buf)
+        io::Write::write(&mut self.body, buf)
     }
 
     fn flush(&mut self) -> Result<()> {
-        self.body.flush()
+        io::Write::flush(&mut self.body)
     }
 }
 
@@ -84,22 +86,22 @@ mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
 
-    #[test]
-    fn test_write_response() -> Result<()> {
+    #[tokio::test]
+    async fn test_write_response() -> Result<()> {
         let mut response = Response::new(StatusCode::Ok);
         response.headers = Headers::new(); // Remove default headers, these can change
         let mut buf = Vec::new();
-        response.write_to(&mut buf)?;
+        response.write_to(&mut buf).await?;
         assert_eq!(buf, b"HTTP/1.1 200 Ok\r\n\r\n");
 
         response.headers.add("Content-Type", "text/plain");
         buf = Vec::new();
-        response.write_to(&mut buf)?;
+        response.write_to(&mut buf).await?;
         assert_eq!(buf, b"HTTP/1.1 200 Ok\r\ncontent-type: text/plain\r\n\r\n");
 
         buf = Vec::new();
-        response.body.write_all(b"Hello")?;
-        response.write_to(&mut buf)?;
+        response.body.write_all(b"Hello").await?;
+        response.write_to(&mut buf).await?;
         println!("Buf: {}", String::from_utf8_lossy(&buf).escape_debug());
         assert_eq!(
             buf,
