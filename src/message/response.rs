@@ -1,11 +1,11 @@
 use std::{
     fs,
-    io::{self, Result},
+    io::{self},
 };
 
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 
-use crate::message::{Headers, StatusCode, StatusLine};
+use crate::message::{Headers, ResponseError, StatusCode, StatusLine, body::BodyParser};
 
 #[derive(Debug)]
 pub struct Response {
@@ -23,13 +23,13 @@ impl Response {
         }
     }
 
-    /// Writes response into a writer.
+    /// Writes request into a writer.
     /// Will update 'Content-Length' header to be correct
     ///
     /// # Errors
     ///
     /// Returns an error if any element fails to write
-    pub async fn write_to<W: AsyncWriteExt + Unpin>(&mut self, mut w: W) -> Result<()> {
+    pub async fn write_to<W: AsyncWriteExt + Unpin>(&mut self, mut w: W) -> io::Result<()> {
         self.status_line.write_to(&mut w).await?;
         if !self.body.is_empty() {
             self.headers
@@ -72,12 +72,136 @@ impl Response {
 // TODO: Is this stupid??
 // Might also just provide body as the writer in the handlers
 impl io::Write for Response {
-    fn write(&mut self, buf: &[u8]) -> Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         io::Write::write(&mut self.body, buf)
     }
 
-    fn flush(&mut self) -> Result<()> {
+    fn flush(&mut self) -> io::Result<()> {
         io::Write::flush(&mut self.body)
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+enum ParserState {
+    Done,
+    StatusLine,
+    Headers,
+    Body,
+}
+
+struct ResponseParser {
+    response: Response,
+    state: ParserState,
+    body_parser: BodyParser,
+}
+
+impl ResponseParser {
+    fn parse_body(&mut self, bytes: &[u8]) -> Result<usize, ResponseError> {
+        let body = &mut self.response.body;
+        let headers = &mut self.response.headers;
+        let (size, done) = self.body_parser.parse_body(body, headers, bytes)?;
+        if done {
+            self.state = ParserState::Done;
+        }
+
+        Ok(size)
+    }
+    /// Takes in the data not yet consumed and gives it to the correct parsing function.
+    /// Returns how much data was consumed.
+    /// Ignores trailers. TODO: add support for them
+    ///
+    /// # Panics
+    ///
+    /// Panics if it has read data before parsing request line
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if a parsing function errors
+    fn parse(&mut self, bytes: &[u8]) -> Result<usize, ResponseError> {
+        let mut read = 0;
+        // Loops until state is done
+        loop {
+            match self.state {
+                ParserState::Done => break,
+                ParserState::StatusLine => {
+                    assert!(
+                        read == 0,
+                        "Request line is the first thing to parse, so read should be 0"
+                    );
+                    let rl = StatusLine::parse(bytes)?;
+                    match rl {
+                        None => return Ok(read),
+                        Some((rl, size)) => {
+                            self.state = ParserState::Headers;
+                            self.response.status_line = rl;
+                            read += size;
+                        }
+                    }
+                }
+                ParserState::Headers => {
+                    let n = self.response.headers.parse_one(&bytes[read..])?;
+                    if n == 0 {
+                        return Ok(read);
+                    }
+                    read += n;
+
+                    // Line is CRLF (\r\n)
+                    if n == 2 {
+                        self.state = ParserState::Body;
+                        // Body state will check if it needs to parse anything
+                    }
+                }
+                ParserState::Body => {
+                    let n = self.parse_body(&bytes[read..])?;
+                    if n == 0 {
+                        return Ok(read);
+                    }
+
+                    read += n;
+                }
+            }
+        }
+
+        Ok(read)
+    }
+
+    /// Creates the response from the reader
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if receives EOF or if there is an error parsing the data
+    pub async fn request_from_reader<R>(reader: &mut R) -> Result<Response, ResponseError>
+    where
+        R: AsyncRead + Unpin,
+    {
+        let mut buf = [0u8; 1024];
+        let mut read: usize = 0;
+        let mut parser = ResponseParser {
+            state: ParserState::StatusLine,
+            response: Response::new(StatusCode::Ok),
+            body_parser: BodyParser::new(),
+        };
+        // This loop handle the reading, allowing the parse function to only worry about the data
+        while parser.state != ParserState::Done {
+            let n = reader.read(&mut buf[read..]).await?;
+            // TODO: Handle EOF, ie. n = 0
+            if n == 0 {
+                eprint!("Read 0 bytes");
+                return Err(ResponseError::MalformedResponse);
+            }
+
+            let consumed = parser.parse(&buf[..read + n])?;
+            read += n;
+            if consumed == 0 {
+                continue;
+            }
+
+            // Moves the data not consumed to the front
+            buf.copy_within(consumed.., 0);
+            // Size of data not consumed is read - consumed
+            read -= consumed;
+        }
+        Ok(parser.response)
     }
 }
 
@@ -87,7 +211,7 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     #[tokio::test]
-    async fn test_write_response() -> Result<()> {
+    async fn test_write_response() -> io::Result<()> {
         let mut response = Response::new(StatusCode::Ok);
         response.headers = Headers::new(); // Remove default headers, these can change
         let mut buf = Vec::new();

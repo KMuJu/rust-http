@@ -15,6 +15,6 @@ pub use headers::Headers;
 pub use method::Method;
 pub use request::{Request, RequestParser};
 pub use request_line::RequestLine;
-pub use response::Response;
+pub use response::{Response, ResponseParser};
 pub use response_builder::ResponseBuilder;
 pub use status_line::{StatusCode, StatusLine};
