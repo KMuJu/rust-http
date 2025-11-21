@@ -1,4 +1,6 @@
-use tokio::io::{AsyncRead, AsyncReadExt};
+use std::io;
+
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 
 use crate::message::{Headers, Method, RequestError, RequestLine, body::BodyParser};
 
@@ -20,6 +22,26 @@ impl Request {
 
     pub fn get_body(&self) -> &[u8] {
         &self.body
+    }
+
+    /// Writes response into a writer.
+    /// Will update 'Content-Length' header to be correct
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any element fails to write
+    pub async fn write_to<W: AsyncWriteExt + Unpin>(&mut self, mut w: W) -> io::Result<()> {
+        self.line.write_to(&mut w).await?;
+        if !self.body.is_empty() {
+            self.headers
+                .add("Content-Length", self.body.len().to_string());
+        }
+        self.headers.write_to(&mut w).await?;
+        if !self.body.is_empty() {
+            w.write_all(&self.body).await?;
+        }
+
+        Ok(())
     }
 }
 
