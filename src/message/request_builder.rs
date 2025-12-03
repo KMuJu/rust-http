@@ -15,7 +15,7 @@ impl RequestBuilder {
         }
     }
 
-    pub fn header<K, V>(&mut self, name: K, value: V) -> &mut Self
+    pub fn header<K, V>(mut self, name: K, value: V) -> Self
     where
         K: Into<String>,
         V: Into<String>,
@@ -45,9 +45,9 @@ mod test {
 
     #[test]
     fn test_builder() {
-        let mut builder = RequestBuilder::new(Method::Get, "/");
-        builder.header("AA", "BB");
-        let request = builder.build();
+        let request = RequestBuilder::new(Method::Get, "/")
+            .header("AA", "BB")
+            .build();
 
         assert_eq!(request.body.len(), 0);
         assert_eq!(request.line.method, Method::Get);

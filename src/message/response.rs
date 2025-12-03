@@ -89,7 +89,7 @@ enum ParserState {
     Body,
 }
 
-struct ResponseParser {
+pub struct ResponseParser {
     response: Response,
     state: ParserState,
     body_parser: BodyParser,
