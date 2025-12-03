@@ -194,15 +194,17 @@ impl BodyParser {
                 Ok((0, true))
             }
             Some(Encoding::Nothing(len)) => {
-                if body.len() + bytes.len() > len {
-                    return Err(BodyError::TooLong);
+                let remaining = len.saturating_sub(body.len());
+                if remaining == 0 {
+                    return Ok((0, true)); // already complete
                 }
 
-                body.extend_from_slice(bytes);
+                // consume at most `remaining` bytes
+                let to_take = remaining.min(bytes.len());
+                body.extend_from_slice(&bytes[..to_take]);
 
                 let done = body.len() == len;
-
-                Ok((bytes.len(), done))
+                Ok((to_take, done))
             }
             Some(Encoding::Chunked) => self.parse_chunked_body(body, headers, bytes),
             None => Err(BodyError::Header(HeadersError::InvalidContentLength)), // TODO: Find better error type?
