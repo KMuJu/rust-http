@@ -24,7 +24,7 @@ impl Response {
     }
 
     /// Writes request into a writer.
-    /// Will update 'Content-Length' header to be correct
+    /// Is not a streamed response, so will update 'Content-Length' header to be correct
     ///
     /// # Errors
     ///
@@ -33,7 +33,7 @@ impl Response {
         self.status_line.write_to(&mut w).await?;
         if !self.body.is_empty() {
             self.headers
-                .add("Content-Length", self.body.len().to_string());
+                .set("Content-Length", self.body.len().to_string());
         }
         self.headers.write_to(&mut w).await?;
         if !self.body.is_empty() {
