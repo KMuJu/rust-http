@@ -1,5 +1,5 @@
 use crate::message::{
-    Headers, RequestError,
+    Headers,
     error::{BodyError, HeadersError},
 };
 
@@ -21,6 +21,7 @@ enum ChunkedState {
 pub struct BodyParser {
     encoding: Option<Encoding>,
     chunked_state: ChunkedState,
+    size_parsed: usize,
 }
 
 const CRLF: &[u8; 2] = b"\r\n";
@@ -30,6 +31,7 @@ impl BodyParser {
         BodyParser {
             encoding: None,
             chunked_state: ChunkedState::Size,
+            size_parsed: 0,
         }
     }
 
@@ -101,9 +103,10 @@ impl BodyParser {
         headers: &mut Headers,
         bytes: &[u8],
     ) -> Result<(usize, bool), BodyError> {
-        let end_of_line = bytes.windows(CRLF.len()).position(|w| w == CRLF);
-        let Some(end_of_line) = end_of_line else {
-            return Ok((0, false));
+        let crlf = bytes.windows(CRLF.len()).position(|w| w == CRLF);
+        let end_of_line = match crlf {
+            Some(e) => e,
+            None => return Ok((0, false)),
         };
 
         let mut done = false;
@@ -111,10 +114,13 @@ impl BodyParser {
             ChunkedState::Size => {
                 // TODO: Implement chunk extensions
                 // Currently ignores them
+                //
+                // Assumes that chunked size is never longer than buffersize
                 let size_line = &bytes[..end_of_line];
                 match usize::from_str_radix(&String::from_utf8_lossy(size_line), 16) {
                     Ok(size) => {
                         self.chunked_state = ChunkedState::Data(size);
+                        self.size_parsed = 0;
 
                         // Then we are done
                         if size == 0 {
@@ -131,23 +137,37 @@ impl BodyParser {
                     }
                     Err(e) => {
                         eprintln!("Error parsing chunked-size: {e}");
-                        return Err(BodyError::MalformedChunkedBody);
+                        return Err(BodyError::MalformedChunkedSize);
                     }
                 }
             }
             ChunkedState::Data(size) => {
-                if size + 2 > bytes.len() {
-                    return Ok((0, false));
-                }
+                // checks if the bytes after size is crlf
+                let found_end = bytes.len() > size - self.size_parsed + 1
+                    && (bytes[size - self.size_parsed] == b'\r'
+                        && bytes[size + 1 - self.size_parsed] == b'\n'); // found end of data
 
-                if bytes[size] != b'\r' || bytes[size + 1] != b'\n' {
+                if !found_end && bytes.len() > size - self.size_parsed + 1 {
+                    println!("Bytes after size is not crlf");
                     return Err(BodyError::MalformedChunkedBody);
                 }
 
-                let b = &bytes[..size];
+                let mut end = if found_end {
+                    size - self.size_parsed
+                } else {
+                    bytes.len()
+                };
+
+                let b = &bytes[..end];
                 body.extend_from_slice(b);
-                self.chunked_state = ChunkedState::Size;
-                return Ok((size + CRLF.len(), false));
+                self.size_parsed += end;
+
+                if found_end {
+                    self.chunked_state = ChunkedState::Size;
+                    end += CRLF.len();
+                }
+
+                return Ok((end, false));
             }
         }
 
@@ -192,6 +212,8 @@ impl BodyParser {
 
 #[cfg(test)]
 mod tests {
+    use crate::message::RequestError;
+
     use super::*;
     use pretty_assertions::assert_eq;
 
@@ -235,7 +257,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_body() -> Result<(), RequestError> {
+    fn test_parse_body_content_length() -> Result<(), RequestError> {
         let mut headers = Headers::new();
         let mut body = Vec::new();
         let mut parser = BodyParser::new();
@@ -251,9 +273,14 @@ mod tests {
         let res = parser.parse_body(&mut body, &mut headers, &input);
         assert!(res.is_err());
 
-        parser.encoding = None;
-        body = Vec::new();
-        headers = Headers::new();
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_body_chunked() -> Result<(), RequestError> {
+        let mut headers = Headers::new();
+        let mut body = Vec::new();
+        let mut parser = BodyParser::new();
         headers.parse_one(b"Transfer-Encoding: chunked\r\n")?;
         let input = b"1\r\n".to_vec();
         parser.parse_body(&mut body, &mut headers, &input)?;

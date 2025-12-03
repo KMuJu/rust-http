@@ -46,6 +46,15 @@ pub enum RequestError {
     #[error("Malformed request")]
     MalformedRequest,
 
+    #[error("Body longer than content-length")]
+    BodyTooLong,
+
+    #[error("Malformed chunked size")]
+    MalformedChunkedSize,
+
+    #[error("Malformed chunked body")]
+    MalformedChunkedBody,
+
     #[error("IO error: {0}")]
     IO(#[from] Error),
 }
@@ -75,6 +84,9 @@ pub enum BodyError {
 
     #[error("Body longer than content-length")]
     TooLong,
+
+    #[error("Malformed chunked size")]
+    MalformedChunkedSize,
 
     #[error("Malformed chunked body")]
     MalformedChunkedBody,

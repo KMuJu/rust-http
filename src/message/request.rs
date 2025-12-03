@@ -269,6 +269,11 @@ mod tests {
         assert_eq!(String::from_utf8_lossy(&rq.body), "AB1234567890");
         assert_eq!(rq.body.len(), 12);
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_chunked_encoding_with_crlf_in_body() -> Result<(), RequestError> {
         let input =
             b"GET / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n2\r\nAB\r\n4\r\n1\r\n1\r\n0\r\n\r\n"
                 .to_vec();
@@ -277,6 +282,11 @@ mod tests {
         assert_eq!(String::from_utf8_lossy(&rq.body), "AB1\r\n1");
         assert_eq!(rq.body.len(), 6);
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_chunked_encoding_err() -> Result<(), RequestError> {
         let input =
             b"GET / HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n2\r\nABC\r\n4\r\n1234\r\n0\r\n\r\n"
                 .to_vec();
