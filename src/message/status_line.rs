@@ -1,6 +1,8 @@
-use std::io::{Result, Write};
+use std::io::{self, Write};
 
 use tokio::io::AsyncWriteExt;
+
+use crate::message::error::StatusLineError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StatusCode {
@@ -32,6 +34,17 @@ impl StatusCode {
         }
         .to_string()
     }
+
+    pub fn parse(bytes: &[u8]) -> Result<StatusCode, StatusLineError> {
+        match bytes {
+            b"200" => Ok(Self::Ok),
+            b"400" => Ok(Self::BadRequest),
+            b"404" => Ok(Self::NotFound),
+            b"405" => Ok(Self::MethodNotAllowed),
+            b"500" => Ok(Self::InternalServerError),
+            _ => Err(StatusLineError::InvalidStatusCode),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -39,6 +52,8 @@ pub struct StatusLine {
     pub version: String,
     pub status_code: StatusCode,
 }
+
+const CRLF: &[u8; 2] = b"\r\n";
 
 impl StatusLine {
     pub fn new(status_code: StatusCode) -> StatusLine {
@@ -56,7 +71,7 @@ impl StatusLine {
     /// # Errors
     ///
     /// Returns Error if write fails
-    pub async fn write_to<W: AsyncWriteExt + Unpin>(&self, mut w: W) -> Result<()> {
+    pub async fn write_to<W: AsyncWriteExt + Unpin>(&self, mut w: W) -> io::Result<()> {
         let mut buf = Vec::new();
 
         write!(
@@ -70,6 +85,47 @@ impl StatusLine {
         w.write_all(&buf).await?;
         Ok(())
     }
+
+    /// Follows RFC 9112 Section 4
+    /// SP = Single Space
+    ///
+    /// status-line = HTTP-version SP status-code SP [ reason-phrase ]
+    ///
+    /// # Returns
+    ///
+    /// No CRLF => Ok(None)
+    /// Valid data => Ok((StatusLine, data consumed))
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if it does not follow the above format
+    pub fn parse(bytes: &[u8]) -> Result<Option<(StatusLine, usize)>, StatusLineError> {
+        let end_of_line = bytes.windows(CRLF.len()).position(|w| w == CRLF);
+        let Some(end) = end_of_line else {
+            return Ok(None);
+        };
+        let current_data = &bytes[..end];
+
+        let parts = current_data.split(|&b| b == b' ').collect::<Vec<&[u8]>>();
+        if parts.len() != 3 && parts.len() != 2 {
+            return Err(StatusLineError::MalformedStatusLine);
+        }
+
+        let version_parts = parts[0].split(|&b| b == b'/').collect::<Vec<&[u8]>>();
+        if version_parts.len() != 2 || version_parts[0] != b"HTTP" {
+            return Err(StatusLineError::MalformedStatusLine);
+        }
+        let version = String::from_utf8_lossy(version_parts[1]).into_owned();
+        let status_code = StatusCode::parse(parts[1])?;
+
+        Ok(Some((
+            StatusLine {
+                version,
+                status_code,
+            },
+            end + CRLF.len(),
+        )))
+    }
 }
 
 #[cfg(test)]
@@ -78,11 +134,44 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     #[tokio::test]
-    async fn test_status_line_write_to() -> Result<()> {
+    async fn test_status_line_write_to() -> io::Result<()> {
         let status_line = StatusLine::new(StatusCode::Ok);
         let mut buf = Vec::new();
         status_line.write_to(&mut buf).await?;
         assert_eq!(buf, b"HTTP/1.1 200 Ok\r\n".to_vec());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_status_line_parse() -> Result<(), StatusLineError> {
+        let input = b"HTTP/1.1 200 Ok";
+        let output = StatusLine::parse(input)?;
+        assert!(output.is_none());
+
+        let input = b"HTTP/1.1 200 Ok\r\n";
+        let output = StatusLine::parse(input)?;
+        let (rl, size) = output.unwrap();
+        assert_eq!(rl.version, "1.1".to_string());
+        assert_eq!(rl.status_code, StatusCode::Ok);
+        assert_eq!(size, 17);
+
+        let input = b"HTTP/1.1 200\r\n";
+        let output = StatusLine::parse(input)?;
+        let (rl, size) = output.unwrap();
+        assert_eq!(rl.version, "1.1".to_string());
+        assert_eq!(rl.status_code, StatusCode::Ok);
+        assert_eq!(size, 14);
+
+        let input = b"HTTP/1.1  200 Ok\r\n";
+        let output = StatusLine::parse(input);
+
+        assert!(output.is_err());
+
+        let input = b"HTP/1.1  200 Ok\r\n";
+        let output = StatusLine::parse(input);
+
+        assert!(output.is_err());
 
         Ok(())
     }

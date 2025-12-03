@@ -1,3 +1,6 @@
+use std::io::{self, Write};
+use tokio::io::AsyncWriteExt;
+
 use crate::message::{Method, error::RequestLineError};
 
 #[derive(Debug, PartialEq, Eq)]
@@ -9,6 +12,29 @@ pub struct RequestLine {
 const CRLF: &[u8; 2] = b"\r\n";
 
 impl RequestLine {
+    /// Follows RFC 9112 Section 3
+    /// SP = Single Space
+    ///
+    /// request-line   = method SP request-target SP HTTP-version
+    ///
+    /// # Errors
+    ///
+    /// Returns Error if write fails
+    pub async fn write_to<W: AsyncWriteExt + Unpin>(&self, mut w: W) -> io::Result<()> {
+        let mut buf = Vec::new();
+
+        write!(
+            buf,
+            "{} {} HTTP/{}\r\n",
+            self.method.to_str(),
+            self.url,
+            self.version,
+        )?;
+
+        w.write_all(&buf).await?;
+        Ok(())
+    }
+
     /// Follows RFC 9112 Section 3
     /// SP = Single Space
     ///

@@ -27,6 +27,19 @@ impl Method {
         }
     }
 
+    pub fn to_str(&self) -> &str {
+        match self {
+            Method::Get => "GET",
+            Method::Head => "HEAD",
+            Method::Post => "POST",
+            Method::Put => "PUT",
+            Method::Delete => "DELETE",
+            Method::Connect => "CONNECT",
+            Method::Options => "OPTIONS",
+            Method::Trace => "TRACE",
+        }
+    }
+
     pub fn to_bytes(&self) -> Vec<u8> {
         match self {
             Self::Get => b"Get".to_vec(),
