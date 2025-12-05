@@ -170,7 +170,7 @@ impl ResponseParser {
     /// # Errors
     ///
     /// This function will return an error if receives EOF or if there is an error parsing the data
-    pub async fn request_from_reader<R>(reader: &mut R) -> Result<Response, ResponseError>
+    pub async fn response_from_reader<R>(reader: &mut R) -> Result<Response, ResponseError>
     where
         R: AsyncRead + Unpin,
     {

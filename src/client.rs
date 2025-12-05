@@ -29,8 +29,7 @@ pub async fn send_request(url: &str, req: &mut Request) -> Result<Response, Clie
 
     println!("Wrote request to stream");
 
-    let resp = ResponseParser::request_from_reader(&mut stream).await?;
+    let resp = ResponseParser::response_from_reader(&mut stream).await?;
 
     Ok(resp)
 }
-
