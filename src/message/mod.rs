@@ -8,6 +8,7 @@ mod request_line;
 mod response;
 mod response_builder;
 mod status_line;
+mod stream_reader;
 
 mod test_utils;
 
