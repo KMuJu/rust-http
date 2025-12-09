@@ -1,7 +1,7 @@
+use std::task::Poll;
+
 use pin_project_lite::pin_project;
 use tokio::io::{self, AsyncRead, AsyncReadExt};
-
-use crate::message::error::StreamError;
 
 pin_project! {
     pub struct StreamReader<R> {
@@ -12,8 +12,6 @@ pin_project! {
     }
 }
 
-const CRLF: &[u8; 2] = b"\r\n";
-
 impl<R: AsyncReadExt + Unpin> StreamReader<R> {
     pub fn new(reader: R) -> Self {
         StreamReader {
@@ -23,7 +21,7 @@ impl<R: AsyncReadExt + Unpin> StreamReader<R> {
         }
     }
 
-    pub async fn read_line(&mut self) -> Result<Vec<u8>, StreamError> {
+    pub async fn read_line(&mut self) -> io::Result<Vec<u8>> {
         let mut out = Vec::new();
         let mut last_was_carrage_return = false;
         loop {
@@ -43,10 +41,46 @@ impl<R: AsyncReadExt + Unpin> StreamReader<R> {
 
             let n = self.reader.read(&mut self.buf).await?;
             if n == 0 {
-                return Err(StreamError::EOF);
+                return Err(io::Error::new(
+                    io::ErrorKind::ConnectionAborted,
+                    "Unexpected EOF",
+                ));
             }
             self.read = n;
         }
+    }
+
+    pub async fn read_n(&mut self, n: usize) -> io::Result<Vec<u8>> {
+        let mut buf = Vec::with_capacity(n);
+        let len = self.read.min(n);
+        if self.read > 0 {
+            buf.extend_from_slice(&self.buf[..len]);
+            self.buf.copy_within(len.., 0);
+            self.read -= len;
+        }
+
+        let remaining = n.saturating_sub(len);
+        if remaining == 0 {
+            return Ok(buf);
+        }
+        let mut b = vec![0u8; remaining];
+        let mut read = 0;
+        while read < remaining {
+            let n = self.reader.read(&mut b[read..]).await?;
+            if n == 0 {
+                return Err(io::Error::new(
+                    io::ErrorKind::ConnectionAborted,
+                    "Unexpected EOF",
+                ));
+            }
+            read += n;
+        }
+
+        // copies into the buf from self.read
+        // if self.read is longer than n or buf len then it will return earlier
+        buf.extend_from_slice(&b);
+
+        Ok(buf)
     }
 }
 
@@ -57,6 +91,16 @@ impl<R: AsyncReadExt + Unpin> AsyncRead for StreamReader<R> {
         buf: &mut tokio::io::ReadBuf<'_>,
     ) -> std::task::Poll<std::io::Result<()>> {
         let this = self.project();
+
+        // Read from self.buf before reader
+        if *this.read > 0 {
+            let amount = buf.remaining().min(*this.read);
+            buf.put_slice(&this.buf[..amount]);
+            this.buf.copy_within(amount..*this.read, 0);
+            *this.read -= amount;
+            return Poll::Ready(Ok(()));
+        }
+
         this.reader.poll_read(cx, buf)
     }
 }
@@ -69,7 +113,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_stream_reader() -> Result<(), StreamError> {
+    async fn test_stream_reader() -> io::Result<()> {
         let input = b"GET / HTTP/1.1\r\nHost: localhost:42069\r\nUser-Agent: curl/7.81.0\r\nAccept: */*\r\n\r\n".to_vec();
         let mut c = Cursor::new(input);
         let mut reader = StreamReader::new(&mut c);
@@ -99,7 +143,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_stream_reader_line_longer_than_buf() -> Result<(), StreamError> {
+    async fn test_stream_reader_line_longer_than_buf() -> io::Result<()> {
         let len = {
             let mut c = Cursor::new("");
             let reader = StreamReader::new(&mut c);
@@ -112,6 +156,52 @@ mod tests {
 
         let out = reader.read_line().await?;
         assert_eq!(out, input[..input.len().saturating_sub(2)]);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_read_n() -> io::Result<()> {
+        let mut c = Cursor::new(b"abab");
+        let mut reader = StreamReader::new(&mut c);
+
+        let buf = reader.read_n(4).await?;
+
+        assert_eq!(buf.len(), 4);
+        assert_eq!(String::from_utf8_lossy(&buf[..4]), "abab");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_read_n_after_read_line() -> io::Result<()> {
+        let mut c = Cursor::new(b"aa\r\nbbb");
+        let mut reader = StreamReader::new(&mut c);
+
+        reader.read_line().await?;
+
+        let buf = reader.read_n(3).await?;
+
+        assert_eq!(buf.len(), 3);
+        assert_eq!(String::from_utf8_lossy(&buf[..3]), "bbb");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_read_n_multiple() -> io::Result<()> {
+        let mut c = Cursor::new(b"aaaabbb");
+        let mut reader = StreamReader::new(&mut c);
+
+        let read = 4;
+        let buf = reader.read_n(read).await?;
+        assert_eq!(buf.len(), read);
+        assert_eq!(String::from_utf8_lossy(&buf[..read]), "aaaa");
+
+        let read = 3;
+        let buf = reader.read_n(read).await?;
+        assert_eq!(buf.len(), read);
+        assert_eq!(String::from_utf8_lossy(&buf[..read]), "bbb");
 
         Ok(())
     }

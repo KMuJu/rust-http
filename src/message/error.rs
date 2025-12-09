@@ -106,12 +106,3 @@ pub enum BodyError {
     #[error("IO error: {0}")]
     IO(#[from] Error),
 }
-
-#[derive(Debug, Error)]
-pub enum StreamError {
-    #[error("Unexpected EOF")]
-    EOF,
-
-    #[error("IO error: {0}")]
-    IO(#[from] Error),
-}
