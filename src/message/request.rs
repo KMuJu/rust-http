@@ -189,7 +189,7 @@ mod tests {
         let rq = RequestParser::request_from_reader(&mut Cursor::new(input)).await?;
         assert_eq!(rq.line.method, Method::Get);
         assert_eq!(rq.line.url, "/".to_string());
-        assert_eq!(rq.line.version, "1.1".to_string());
+        assert_eq!(rq.line.version, (1, 1));
         assert_eq!(rq.headers.get("Host"), Some(&"localhost:42069".to_string()));
         assert_eq!(
             rq.headers.get("User-Agent"),
@@ -206,7 +206,7 @@ mod tests {
         let rq = RequestParser::request_from_reader(&mut batch_reader).await?;
         assert_eq!(rq.line.method, Method::Get);
         assert_eq!(rq.line.url, "/".to_string());
-        assert_eq!(rq.line.version, "1.1".to_string());
+        assert_eq!(rq.line.version, (1, 1));
         assert_eq!(rq.headers.get("Host"), Some(&"localhost:42069".to_string()));
         assert_eq!(
             rq.headers.get("User-Agent"),
@@ -220,7 +220,7 @@ mod tests {
         let rq = RequestParser::request_from_reader(&mut batch_reader).await?;
         assert_eq!(rq.line.method, Method::Post);
         assert_eq!(rq.line.url, "/post".to_string());
-        assert_eq!(rq.line.version, "1.1".to_string());
+        assert_eq!(rq.line.version, (1, 1));
         assert_eq!(rq.headers.get("Host"), Some(&"localhost:42069".to_string()));
         assert_eq!(
             rq.headers.get("User-Agent"),
@@ -240,7 +240,7 @@ mod tests {
         let rq = RequestParser::request_from_reader(&mut batch_reader).await?;
         assert_eq!(rq.line.method, Method::Get);
         assert_eq!(rq.line.url, "/".to_string());
-        assert_eq!(rq.line.version, "1.1".to_string());
+        assert_eq!(rq.line.version, (1, 1));
         assert_eq!(rq.headers.get("Host"), Some(&"localhost:42069".to_string()));
         assert_eq!(rq.headers.get("Content-Length"), Some(&"1".to_string()));
         assert_eq!(rq.body, vec![b'A']);

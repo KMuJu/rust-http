@@ -2,7 +2,7 @@ use std::io::{self, Write};
 
 use tokio::io::AsyncWriteExt;
 
-use crate::message::error::StatusLineError;
+use crate::message::{error::StatusLineError, version::HttpVersion};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StatusCode {
@@ -49,7 +49,7 @@ impl StatusCode {
 
 #[derive(Debug)]
 pub struct StatusLine {
-    pub version: String,
+    pub version: HttpVersion,
     pub status_code: StatusCode,
 }
 
@@ -58,7 +58,7 @@ const CRLF: &[u8; 2] = b"\r\n";
 impl StatusLine {
     pub fn new(status_code: StatusCode) -> StatusLine {
         StatusLine {
-            version: "1.1".to_string(),
+            version: HttpVersion::from((1, 1)),
             status_code,
         }
     }
@@ -115,7 +115,7 @@ impl StatusLine {
         if version_parts.len() != 2 || version_parts[0] != b"HTTP" {
             return Err(StatusLineError::MalformedStatusLine);
         }
-        let version = String::from_utf8_lossy(version_parts[1]).into_owned();
+        let version = HttpVersion::from_bytes(version_parts[1])?;
         let status_code = StatusCode::parse(parts[1])?;
 
         Ok(Some((
@@ -152,14 +152,14 @@ mod tests {
         let input = b"HTTP/1.1 200 Ok\r\n";
         let output = StatusLine::parse(input)?;
         let (rl, size) = output.unwrap();
-        assert_eq!(rl.version, "1.1".to_string());
+        assert_eq!(rl.version, (1, 1));
         assert_eq!(rl.status_code, StatusCode::Ok);
         assert_eq!(size, 17);
 
         let input = b"HTTP/1.1 200\r\n";
         let output = StatusLine::parse(input)?;
         let (rl, size) = output.unwrap();
-        assert_eq!(rl.version, "1.1".to_string());
+        assert_eq!(rl.version, (1, 1));
         assert_eq!(rl.status_code, StatusCode::Ok);
         assert_eq!(size, 14);
 

@@ -112,7 +112,7 @@ async fn handle_connection<S: Stream>(mut stream: S, handler: Handler) {
 }
 
 fn should_close(req: &Request, resp: &Response) -> bool {
-    if req.line.version == "1.0" && !req.headers.field_contains_value("Connection", "keep-alive") {
+    if req.line.version == (1, 0) && !req.headers.field_contains_value("Connection", "keep-alive") {
         return true;
     }
     if req.headers.field_contains_value("Connection", "close") {

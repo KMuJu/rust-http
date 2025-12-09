@@ -1,13 +1,13 @@
 use std::io::{self, Write};
 use tokio::io::AsyncWriteExt;
 
-use crate::message::{Method, error::RequestLineError};
+use crate::message::{Method, error::RequestLineError, version::HttpVersion};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct RequestLine {
     pub method: Method,
     pub url: String,
-    pub version: String,
+    pub version: HttpVersion,
 }
 const CRLF: &[u8; 2] = b"\r\n";
 
@@ -67,7 +67,7 @@ impl RequestLine {
             return Err(RequestLineError::MalformedRequestLine);
         }
 
-        let version = String::from_utf8_lossy(version_parts[1]).into_owned();
+        let version = HttpVersion::from_bytes(version_parts[1])?;
 
         Ok(Some((
             RequestLine {
@@ -79,7 +79,7 @@ impl RequestLine {
         )))
     }
 
-    pub fn new(method: Method, url: String, version: String) -> RequestLine {
+    pub fn from_parts(method: Method, url: String, version: HttpVersion) -> RequestLine {
         RequestLine {
             method,
             url,
@@ -92,7 +92,7 @@ impl Default for RequestLine {
         RequestLine {
             method: Method::Get,
             url: "".to_string(),
-            version: "1.1".to_string(),
+            version: HttpVersion::default(),
         }
     }
 }
@@ -115,7 +115,7 @@ mod tests {
 
         assert_eq!(rl.method, Method::Get);
         assert_eq!(rl.url, "/".to_string());
-        assert_eq!(rl.version, "1.1".to_string());
+        assert_eq!(rl.version, (1, 1));
         assert_eq!(size, 16);
 
         let input = b"POST /test HTTP/1.1\r\n";
@@ -124,7 +124,7 @@ mod tests {
 
         assert_eq!(rl.method, Method::Post);
         assert_eq!(rl.url, "/test".to_string());
-        assert_eq!(rl.version, "1.1".to_string());
+        assert_eq!(rl.version, (1, 1));
         assert_eq!(size, 21);
 
         let input = b"POST  /test HTTP/1.1\r\n";

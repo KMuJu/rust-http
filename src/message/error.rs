@@ -3,12 +3,21 @@ use std::io::Error;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
+pub enum VersionError {
+    #[error("Invalid http version")]
+    InvalidHTTPVersion,
+}
+
+#[derive(Debug, Error)]
 pub enum RequestLineError {
     #[error("Malformed request line")]
     MalformedRequestLine,
 
     #[error("Invalid method")]
     InvalidMehtod,
+
+    #[error("Invalid http version")]
+    InvalidHTTPVersion(#[from] VersionError),
 }
 
 #[derive(Debug, Error)]
@@ -18,6 +27,9 @@ pub enum StatusLineError {
 
     #[error("Invalid method")]
     InvalidStatusCode,
+
+    #[error("Invalid http version")]
+    InvalidHTTPVersion(#[from] VersionError),
 }
 
 #[derive(Debug, Error)]
