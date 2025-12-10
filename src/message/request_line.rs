@@ -9,7 +9,6 @@ pub struct RequestLine {
     pub url: String,
     pub version: HttpVersion,
 }
-const CRLF: &[u8; 2] = b"\r\n";
 
 impl RequestLine {
     /// Follows RFC 9112 Section 3
@@ -34,51 +33,6 @@ impl RequestLine {
         w.write_all(&buf).await?;
         Ok(())
     }
-
-    /// Follows RFC 9112 Section 3
-    /// SP = Single Space
-    ///
-    /// request-line   = method SP request-target SP HTTP-version
-    ///
-    /// # Returns
-    ///
-    /// No CRLF => Ok(None)
-    /// Valid data => Ok((RequestLine, data consumed))
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if it does not follow the above format
-    pub fn parse(bytes: &[u8]) -> Result<Option<(RequestLine, usize)>, RequestLineError> {
-        let end_of_line = bytes.windows(CRLF.len()).position(|w| w == CRLF);
-        let Some(end) = end_of_line else {
-            return Ok(None);
-        };
-        let current_data = &bytes[..end];
-
-        let parts = current_data.split(|&b| b == b' ').collect::<Vec<&[u8]>>();
-        if parts.len() != 3 {
-            return Err(RequestLineError::MalformedRequestLine);
-        }
-
-        let method = Method::parse(parts[0])?;
-        let url = String::from_utf8_lossy(parts[1]).into_owned();
-        let version_parts = parts[2].split(|&b| b == b'/').collect::<Vec<&[u8]>>();
-        if version_parts.len() != 2 || version_parts[0] != b"HTTP" {
-            return Err(RequestLineError::MalformedRequestLine);
-        }
-
-        let version = HttpVersion::from_bytes(version_parts[1])?;
-
-        Ok(Some((
-            RequestLine {
-                method,
-                url,
-                version,
-            },
-            end + CRLF.len(),
-        )))
-    }
-
     pub fn from_line(line: &[u8]) -> Result<RequestLine, RequestLineError> {
         let parts = line.split(|&b| b == b' ').collect::<Vec<&[u8]>>();
         if parts.len() != 3 {
@@ -127,37 +81,28 @@ mod tests {
     #[test]
     fn test_request_line_parse() -> Result<(), RequestLineError> {
         let input = b"GET / HTTP/1.1";
-        let output = RequestLine::parse(input)?;
-
-        assert!(output.is_none());
-
-        let input = b"GET / HTTP/1.1\r\n";
-        let output = RequestLine::parse(input)?;
-        let (rl, size) = output.unwrap();
+        let rl = RequestLine::from_line(input)?;
 
         assert_eq!(rl.method, Method::Get);
         assert_eq!(rl.url, "/".to_string());
         assert_eq!(rl.version, (1, 1));
-        assert_eq!(size, 16);
 
-        let input = b"POST /test HTTP/1.1\r\n";
-        let output = RequestLine::parse(input)?;
-        let (rl, size) = output.unwrap();
+        let input = b"POST /test HTTP/1.1";
+        let rl = RequestLine::from_line(input)?;
 
         assert_eq!(rl.method, Method::Post);
         assert_eq!(rl.url, "/test".to_string());
         assert_eq!(rl.version, (1, 1));
-        assert_eq!(size, 21);
 
-        let input = b"POST  /test HTTP/1.1\r\n";
-        let output = RequestLine::parse(input);
+        let input = b"POST  /test HTTP/1.1";
+        let rl = RequestLine::from_line(input);
 
-        assert!(output.is_err());
+        assert!(rl.is_err());
 
-        let input = b"POST /test HTP/1.1\r\n";
-        let output = RequestLine::parse(input);
+        let input = b"POST /test HTP/1.1";
+        let rl = RequestLine::from_line(input);
 
-        assert!(output.is_err());
+        assert!(rl.is_err());
 
         Ok(())
     }

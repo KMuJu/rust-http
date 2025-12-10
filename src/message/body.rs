@@ -138,28 +138,28 @@ mod tests {
     fn test_set_content_length() -> Result<(), RequestError> {
         let mut headers = Headers::new();
 
-        headers.parse_one(b"Content-Length: 1\r\n")?;
+        headers.parse_one_from_line(b"Content-Length: 1")?;
         let encoding = get_encoding(&mut headers)?;
         assert_eq!(encoding, Encoding::Nothing(1));
 
         headers = Headers::new();
-        headers.parse_one(b"Content-Length: 2,2,2\r\n")?;
+        headers.parse_one_from_line(b"Content-Length: 2,2,2")?;
         let encoding = get_encoding(&mut headers)?;
         assert_eq!(encoding, Encoding::Nothing(2));
 
         headers = Headers::new();
-        headers.parse_one(b"Content-Length: 2,1,1\r\n")?;
+        headers.parse_one_from_line(b"Content-Length: 2,1,1")?;
         let res = get_encoding(&mut headers);
         assert!(res.is_err());
 
         headers = Headers::new();
-        headers.parse_one(b"Transfer-Encoding: chunked\r\n")?;
+        headers.parse_one_from_line(b"Transfer-Encoding: chunked")?;
         let encoding = get_encoding(&mut headers)?;
         assert_eq!(encoding, Encoding::Chunked);
 
         headers = Headers::new();
-        headers.parse_one(b"Content-Length: 2\r\n")?;
-        headers.parse_one(b"Transfer-Encoding: chunked\r\n")?;
+        headers.parse_one_from_line(b"Content-Length: 2")?;
+        headers.parse_one_from_line(b"Transfer-Encoding: chunked")?;
         let res = get_encoding(&mut headers);
         assert!(res.is_err());
 
@@ -171,7 +171,7 @@ mod tests {
         let mut c = Cursor::new(b"1\r\nA\r\n4\r\n1\r\n1\r\n0\r\n");
         let mut reader = StreamReader::new(&mut c);
         let mut headers = Headers::new();
-        headers.parse_one(b"Transfer-Encoding: chunked\r\n")?;
+        headers.parse_one_from_line(b"Transfer-Encoding: chunked")?;
         let body = parse_body(&mut headers, &mut reader).await?;
 
         assert_eq!(String::from_utf8_lossy(&body), "A1\r\n1".to_string());

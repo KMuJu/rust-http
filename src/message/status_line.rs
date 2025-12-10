@@ -53,8 +53,6 @@ pub struct StatusLine {
     pub status_code: StatusCode,
 }
 
-const CRLF: &[u8; 2] = b"\r\n";
-
 impl StatusLine {
     pub fn new(status_code: StatusCode) -> StatusLine {
         StatusLine {
@@ -99,14 +97,8 @@ impl StatusLine {
     /// # Errors
     ///
     /// This function will return an error if it does not follow the above format
-    pub fn parse(bytes: &[u8]) -> Result<Option<(StatusLine, usize)>, StatusLineError> {
-        let end_of_line = bytes.windows(CRLF.len()).position(|w| w == CRLF);
-        let Some(end) = end_of_line else {
-            return Ok(None);
-        };
-        let current_data = &bytes[..end];
-
-        let parts = current_data.split(|&b| b == b' ').collect::<Vec<&[u8]>>();
+    pub fn from_line(line: &[u8]) -> Result<StatusLine, StatusLineError> {
+        let parts = line.split(|&b| b == b' ').collect::<Vec<&[u8]>>();
         if parts.len() != 3 && parts.len() != 2 {
             return Err(StatusLineError::MalformedStatusLine);
         }
@@ -118,13 +110,10 @@ impl StatusLine {
         let version = HttpVersion::from_bytes(version_parts[1])?;
         let status_code = StatusCode::parse(parts[1])?;
 
-        Ok(Some((
-            StatusLine {
-                version,
-                status_code,
-            },
-            end + CRLF.len(),
-        )))
+        Ok(StatusLine {
+            version,
+            status_code,
+        })
     }
 }
 
@@ -146,32 +135,24 @@ mod tests {
     #[test]
     fn test_status_line_parse() -> Result<(), StatusLineError> {
         let input = b"HTTP/1.1 200 Ok";
-        let output = StatusLine::parse(input)?;
-        assert!(output.is_none());
-
-        let input = b"HTTP/1.1 200 Ok\r\n";
-        let output = StatusLine::parse(input)?;
-        let (rl, size) = output.unwrap();
+        let rl = StatusLine::from_line(input)?;
         assert_eq!(rl.version, (1, 1));
         assert_eq!(rl.status_code, StatusCode::Ok);
-        assert_eq!(size, 17);
 
-        let input = b"HTTP/1.1 200\r\n";
-        let output = StatusLine::parse(input)?;
-        let (rl, size) = output.unwrap();
+        let input = b"HTTP/1.1 200";
+        let rl = StatusLine::from_line(input)?;
         assert_eq!(rl.version, (1, 1));
         assert_eq!(rl.status_code, StatusCode::Ok);
-        assert_eq!(size, 14);
 
-        let input = b"HTTP/1.1  200 Ok\r\n";
-        let output = StatusLine::parse(input);
+        let input = b"HTTP/1.1  200 Ok";
+        let rl = StatusLine::from_line(input);
 
-        assert!(output.is_err());
+        assert!(rl.is_err());
 
-        let input = b"HTP/1.1  200 Ok\r\n";
-        let output = StatusLine::parse(input);
+        let input = b"HTP/1.1  200 Ok";
+        let rl = StatusLine::from_line(input);
 
-        assert!(output.is_err());
+        assert!(rl.is_err());
 
         Ok(())
     }
