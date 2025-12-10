@@ -1,4 +1,5 @@
 mod body;
+mod connection;
 mod error;
 mod headers;
 mod method;
