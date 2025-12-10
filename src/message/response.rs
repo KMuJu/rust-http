@@ -3,9 +3,9 @@ use std::{
     io::{self},
 };
 
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 
-use crate::message::{Headers, ResponseError, StatusCode, StatusLine, body::BodyParser};
+use crate::message::{Headers, StatusCode, StatusLine};
 
 #[derive(Debug)]
 pub struct Response {

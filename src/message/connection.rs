@@ -3,7 +3,7 @@ use std::io;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::message::{
-    Headers, Request, RequestError, RequestLine, Response, ResponseError, body::BodyParser,
+    Headers, Request, RequestError, RequestLine, Response, ResponseError, body::parse_body,
     stream_reader::StreamReader,
 };
 
@@ -55,9 +55,7 @@ where
             headers.parse_one_from_line(&line)?;
         }
 
-        let body = BodyParser::new()
-            .p_body(&mut headers, &mut self.reader)
-            .await?;
+        let body = parse_body(&mut headers, &mut self.reader).await?;
 
         Ok(Request {
             line: req_line,
