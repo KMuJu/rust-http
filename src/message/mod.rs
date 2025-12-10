@@ -14,6 +14,7 @@ mod version;
 
 mod test_utils;
 
+pub use connection::Connection;
 pub use error::{RequestError, ResponseError};
 pub use headers::Headers;
 pub use method::Method;
@@ -23,3 +24,4 @@ pub use request_line::RequestLine;
 pub use response::{Response, ResponseParser};
 pub use response_builder::ResponseBuilder;
 pub use status_line::{StatusCode, StatusLine};
+pub use stream_reader::StreamReader;

@@ -226,7 +226,6 @@ mod tests {
         buf = Vec::new();
         response.body.write_all(b"Hello").await?;
         response.write_to(&mut buf).await?;
-        println!("Buf: {}", String::from_utf8_lossy(&buf).escape_debug());
         assert_eq!(
             buf,
             b"HTTP/1.1 200 Ok\r\ncontent-length: 5\r\ncontent-type: text/plain\r\n\r\nHello"
