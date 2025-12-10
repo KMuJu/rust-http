@@ -140,8 +140,6 @@ mod test {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpStream;
 
-    use crate::message::StreamReader;
-
     use super::*;
 
     fn fake_handler(_: &Request) -> Result<Response, ServerError> {
@@ -172,7 +170,7 @@ mod test {
         let input = b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n".to_vec();
         let fake_stream = Cursor::new(input.clone());
         let mut v = Cursor::new(Vec::new());
-        let connection = Connection::<_, _, Request>::new(StreamReader::new(fake_stream), &mut v);
+        let connection = Connection::<_, _, Request>::new(fake_stream, &mut v);
 
         fn test_handler(_: &Request) -> Result<Response, ServerError> {
             let mut builder = ResponseBuilder::new();

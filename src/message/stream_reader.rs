@@ -1,15 +1,9 @@
-use std::task::Poll;
+use tokio::io::{self, AsyncReadExt};
 
-use pin_project_lite::pin_project;
-use tokio::io::{self, AsyncRead, AsyncReadExt};
-
-pin_project! {
-    pub struct StreamReader<R> {
-        read: usize,
-        buf: [u8; 2048],
-        #[pin]
-        reader: R,
-    }
+pub struct StreamReader<R> {
+    read: usize,
+    buf: [u8; 2048],
+    reader: R,
 }
 
 impl<R: AsyncReadExt + Unpin> StreamReader<R> {
@@ -81,27 +75,6 @@ impl<R: AsyncReadExt + Unpin> StreamReader<R> {
         buf.extend_from_slice(&b);
 
         Ok(buf)
-    }
-}
-
-impl<R: AsyncReadExt + Unpin> AsyncRead for StreamReader<R> {
-    fn poll_read(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &mut tokio::io::ReadBuf<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        let this = self.project();
-
-        // Read from self.buf before reader
-        if *this.read > 0 {
-            let amount = buf.remaining().min(*this.read);
-            buf.put_slice(&this.buf[..amount]);
-            this.buf.copy_within(amount..*this.read, 0);
-            *this.read -= amount;
-            return Poll::Ready(Ok(()));
-        }
-
-        this.reader.poll_read(cx, buf)
     }
 }
 

@@ -99,8 +99,7 @@ mod tests {
         let input = b"GET / HTTP/1.1\r\nHost: localhost:42069\r\nUser-Agent: curl/7.81.0\r\nAccept: */*\r\n\r\n";
         let c = Cursor::new(input);
         let writer = Cursor::new(input.to_vec());
-        let reader = StreamReader::new(c);
-        let mut connection = Connection::<_, _, Request>::new(reader, writer);
+        let mut connection = Connection::<_, _, Request>::new(c, writer);
 
         let rq = connection.read().await?;
         assert_eq!(rq.line.method, Method::Get);
@@ -121,8 +120,7 @@ mod tests {
         let input = b"GET / HTTP/1.1\r\nHost: localhost:42069\r\nUser-Agent: curl/7.81.0\r\nAccept: */*\r\n\r\n".to_vec();
         let batch_reader = BatchReader::new(input.clone(), 3);
         let writer = Cursor::new(input.to_vec());
-        let reader = StreamReader::new(batch_reader);
-        let mut connection = Connection::<_, _, Request>::new(reader, writer);
+        let mut connection = Connection::<_, _, Request>::new(batch_reader, writer);
 
         let rq = connection.read().await?;
         assert_eq!(rq.line.method, Method::Get);
@@ -139,8 +137,7 @@ mod tests {
         let input = b"POST /post HTTP/1.1\r\nHost: localhost:42069\r\nUser-Agent: curl/7.81.0\r\nAccept: */*\r\n\r\n".to_vec();
         let batch_reader = BatchReader::new(input.clone(), 3);
         let writer = Cursor::new(input.to_vec());
-        let reader = StreamReader::new(batch_reader);
-        let mut connection = Connection::<_, _, Request>::new(reader, writer);
+        let mut connection = Connection::<_, _, Request>::new(batch_reader, writer);
 
         let rq = connection.read().await?;
         assert_eq!(rq.line.method, Method::Post);
@@ -163,8 +160,7 @@ mod tests {
             b"GET / HTTP/1.1\r\nHost: localhost:42069\r\nContent-Length: 1\r\n\r\nA".to_vec();
         let batch_reader = BatchReader::new(input.clone(), 3);
         let writer = Cursor::new(input.to_vec());
-        let reader = StreamReader::new(batch_reader);
-        let mut connection = Connection::<_, _, Request>::new(reader, writer);
+        let mut connection = Connection::<_, _, Request>::new(batch_reader, writer);
 
         let rq = connection.read().await?;
         assert_eq!(rq.line.method, Method::Get);
@@ -178,8 +174,7 @@ mod tests {
             b"GET / HTTP/1.1\r\nHost: localhost:42069\r\nContent-Length: 2\r\n\r\nA".to_vec();
         let batch_reader = BatchReader::new(input.clone(), 3);
         let writer = Cursor::new(input.to_vec());
-        let reader = StreamReader::new(batch_reader);
-        let mut connection = Connection::<_, _, Request>::new(reader, writer);
+        let mut connection = Connection::<_, _, Request>::new(batch_reader, writer);
 
         let rq = connection.read().await;
 
@@ -199,8 +194,7 @@ mod tests {
                 .to_vec();
         let batch_reader = BatchReader::new(input.clone(), 3);
         let writer = Cursor::new(input.to_vec());
-        let reader = StreamReader::new(batch_reader);
-        let mut connection = Connection::<_, _, Request>::new(reader, writer);
+        let mut connection = Connection::<_, _, Request>::new(batch_reader, writer);
 
         let rq = connection.read().await?;
         assert_eq!(String::from_utf8_lossy(&rq.body), "AB1234567890");
@@ -217,8 +211,7 @@ mod tests {
                 .to_vec();
         let batch_reader = BatchReader::new(input.clone(), 3);
         let writer = Cursor::new(input.to_vec());
-        let reader = StreamReader::new(batch_reader);
-        let mut connection = Connection::<_, _, Request>::new(reader, writer);
+        let mut connection = Connection::<_, _, Request>::new(batch_reader, writer);
 
         let rq = connection.read().await?;
         assert_eq!(String::from_utf8_lossy(&rq.body), "AB1\r\n1");
@@ -234,8 +227,7 @@ mod tests {
                 .to_vec();
         let batch_reader = BatchReader::new(input.clone(), 3);
         let writer = Cursor::new(input.to_vec());
-        let reader = StreamReader::new(batch_reader);
-        let mut connection = Connection::<_, _, Request>::new(reader, writer);
+        let mut connection = Connection::<_, _, Request>::new(batch_reader, writer);
 
         let rq = connection.read().await;
         assert!(rq.is_err());
