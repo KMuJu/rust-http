@@ -1,8 +1,11 @@
-use std::io::{self, Write};
+use std::{
+    fmt::Display,
+    io::{self, Write},
+};
 
 use tokio::io::AsyncWriteExt;
 
-use crate::message::error::StatusLineError;
+use crate::message::{error::StatusLineError, version::HttpVersion};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StatusCode {
@@ -49,16 +52,14 @@ impl StatusCode {
 
 #[derive(Debug)]
 pub struct StatusLine {
-    pub version: String,
+    pub version: HttpVersion,
     pub status_code: StatusCode,
 }
-
-const CRLF: &[u8; 2] = b"\r\n";
 
 impl StatusLine {
     pub fn new(status_code: StatusCode) -> StatusLine {
         StatusLine {
-            version: "1.1".to_string(),
+            version: HttpVersion::from((1, 1)),
             status_code,
         }
     }
@@ -99,15 +100,9 @@ impl StatusLine {
     /// # Errors
     ///
     /// This function will return an error if it does not follow the above format
-    pub fn parse(bytes: &[u8]) -> Result<Option<(StatusLine, usize)>, StatusLineError> {
-        let end_of_line = bytes.windows(CRLF.len()).position(|w| w == CRLF);
-        let Some(end) = end_of_line else {
-            return Ok(None);
-        };
-        let current_data = &bytes[..end];
-
-        let parts = current_data.split(|&b| b == b' ').collect::<Vec<&[u8]>>();
-        if parts.len() != 3 && parts.len() != 2 {
+    pub fn from_line(line: &[u8]) -> Result<StatusLine, StatusLineError> {
+        let parts = line.splitn(3, |&b| b == b' ').collect::<Vec<&[u8]>>();
+        if parts.len() == 1 {
             return Err(StatusLineError::MalformedStatusLine);
         }
 
@@ -115,16 +110,25 @@ impl StatusLine {
         if version_parts.len() != 2 || version_parts[0] != b"HTTP" {
             return Err(StatusLineError::MalformedStatusLine);
         }
-        let version = String::from_utf8_lossy(version_parts[1]).into_owned();
+        let version = HttpVersion::from_bytes(version_parts[1])?;
         let status_code = StatusCode::parse(parts[1])?;
 
-        Ok(Some((
-            StatusLine {
-                version,
-                status_code,
-            },
-            end + CRLF.len(),
-        )))
+        Ok(StatusLine {
+            version,
+            status_code,
+        })
+    }
+}
+
+impl Display for StatusLine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "HTTP/{} {} {}",
+            self.version,
+            self.status_code.to_code(),
+            self.status_code.to_reason()
+        )
     }
 }
 
@@ -146,32 +150,24 @@ mod tests {
     #[test]
     fn test_status_line_parse() -> Result<(), StatusLineError> {
         let input = b"HTTP/1.1 200 Ok";
-        let output = StatusLine::parse(input)?;
-        assert!(output.is_none());
-
-        let input = b"HTTP/1.1 200 Ok\r\n";
-        let output = StatusLine::parse(input)?;
-        let (rl, size) = output.unwrap();
-        assert_eq!(rl.version, "1.1".to_string());
+        let rl = StatusLine::from_line(input)?;
+        assert_eq!(rl.version, (1, 1));
         assert_eq!(rl.status_code, StatusCode::Ok);
-        assert_eq!(size, 17);
 
-        let input = b"HTTP/1.1 200\r\n";
-        let output = StatusLine::parse(input)?;
-        let (rl, size) = output.unwrap();
-        assert_eq!(rl.version, "1.1".to_string());
+        let input = b"HTTP/1.1 200";
+        let rl = StatusLine::from_line(input)?;
+        assert_eq!(rl.version, (1, 1));
         assert_eq!(rl.status_code, StatusCode::Ok);
-        assert_eq!(size, 14);
 
-        let input = b"HTTP/1.1  200 Ok\r\n";
-        let output = StatusLine::parse(input);
+        let input = b"HTTP/1.1  200 Ok";
+        let rl = StatusLine::from_line(input);
 
-        assert!(output.is_err());
+        assert!(rl.is_err());
 
-        let input = b"HTP/1.1  200 Ok\r\n";
-        let output = StatusLine::parse(input);
+        let input = b"HTP/1.1  200 Ok";
+        let rl = StatusLine::from_line(input);
 
-        assert!(output.is_err());
+        assert!(rl.is_err());
 
         Ok(())
     }

@@ -1,4 +1,4 @@
-use crate::message::{Headers, Method, Request, RequestLine};
+use crate::message::{Headers, Method, Request, RequestLine, version::HttpVersion};
 
 pub struct RequestBuilder {
     request_line: RequestLine,
@@ -9,7 +9,7 @@ pub struct RequestBuilder {
 impl RequestBuilder {
     pub fn new(method: Method, url: impl Into<String>) -> RequestBuilder {
         RequestBuilder {
-            request_line: RequestLine::new(method, url.into(), "1.1".to_string()),
+            request_line: RequestLine::from_parts(method, url.into(), HttpVersion::default()),
             headers: Headers::new(),
             body: Vec::new(),
         }
@@ -52,7 +52,7 @@ mod test {
         assert_eq!(request.body.len(), 0);
         assert_eq!(request.line.method, Method::Get);
         assert_eq!(request.line.url, "/".to_string());
-        assert_eq!(request.line.version, "1.1".to_string());
+        assert_eq!(request.line.version, (1, 1));
         assert_eq!(request.headers.get("AA"), Some(&"BB".to_string()));
     }
 }

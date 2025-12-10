@@ -2,10 +2,10 @@ mod error;
 
 pub use error::ServerError;
 
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpListener;
 
-use crate::message::{Request, RequestError, RequestParser, Response, ResponseBuilder, StatusCode};
+use crate::message::{Connection, Request, RequestError, Response, ResponseBuilder, StatusCode};
 
 pub trait Stream: AsyncRead + AsyncWrite + Unpin + Send {}
 impl<T: AsyncRead + AsyncWrite + Unpin + Send> Stream for T {}
@@ -45,22 +45,28 @@ impl Server {
         let handler = self.handler;
 
         loop {
-            let (stream, _) = self.listener.accept().await?;
+            let (mut stream, _) = self.listener.accept().await?;
             let addr = stream.peer_addr().unwrap();
             println!("Got request from: {:?}", addr);
 
             tokio::spawn(async move {
-                handle_connection(stream, handler).await;
+                let (r, w) = stream.split();
+                let connection = Connection::<_, _, Request>::new(r, w);
+                handle_connection(connection, handler).await;
             });
         }
     }
 }
 
-async fn internal_error<S: Stream>(stream: &mut S) {
+async fn internal_error<R, W>(connection: &mut Connection<R, W, Request>)
+where
+    R: AsyncReadExt + Unpin,
+    W: AsyncWriteExt + Unpin,
+{
     let mut builder = ResponseBuilder::new();
     builder.set_status_code(StatusCode::InternalServerError);
     let mut response = builder.build();
-    let r = response.write_to(stream).await;
+    let r = connection.respond(&mut response).await;
     if r.is_err() {
         eprintln!("Failed to write internal error to tcp stream");
         // Something is wrong if it can't write to the stream
@@ -72,9 +78,13 @@ async fn internal_error<S: Stream>(stream: &mut S) {
 /// Then writes the returning response to the stream
 ///
 /// If any of the above failes, it will write an InternalServerError response to the stream
-async fn handle_connection<S: Stream>(mut stream: S, handler: Handler) {
+async fn handle_connection<R, W>(mut connection: Connection<R, W, Request>, handler: Handler)
+where
+    R: AsyncReadExt + Unpin,
+    W: AsyncWriteExt + Unpin,
+{
     loop {
-        let request = RequestParser::request_from_reader(&mut stream).await;
+        let request = connection.read().await;
 
         let request = match request {
             Ok(req) => req,
@@ -83,7 +93,7 @@ async fn handle_connection<S: Stream>(mut stream: S, handler: Handler) {
                 break;
             }
             Err(_) => {
-                internal_error(&mut stream).await;
+                internal_error(&mut connection).await;
                 break;
             }
         };
@@ -94,13 +104,13 @@ async fn handle_connection<S: Stream>(mut stream: S, handler: Handler) {
             Ok(resp) => resp,
             Err(e) => {
                 eprintln!("Error handling request: {e:?}");
-                internal_error(&mut stream).await;
+                internal_error(&mut connection).await;
                 break;
             }
         };
 
-        if response.write_to(&mut stream).await.is_err() {
-            internal_error(&mut stream).await;
+        if connection.respond(&mut response).await.is_err() {
+            internal_error(&mut connection).await;
             break;
         }
 
@@ -112,7 +122,7 @@ async fn handle_connection<S: Stream>(mut stream: S, handler: Handler) {
 }
 
 fn should_close(req: &Request, resp: &Response) -> bool {
-    if req.line.version == "1.0" && !req.headers.field_contains_value("Connection", "keep-alive") {
+    if req.line.version == (1, 0) && !req.headers.field_contains_value("Connection", "keep-alive") {
         return true;
     }
     if req.headers.field_contains_value("Connection", "close") {
@@ -157,7 +167,10 @@ mod test {
     async fn test_handle_connection_ok() {
         use std::io::Cursor;
 
-        let mut fake_stream = Cursor::new(b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n".to_vec());
+        let input = b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n".to_vec();
+        let fake_stream = Cursor::new(input.clone());
+        let mut v = Cursor::new(Vec::new());
+        let connection = Connection::<_, _, Request>::new(fake_stream, &mut v);
 
         fn test_handler(_: &Request) -> Result<Response, ServerError> {
             let mut builder = ResponseBuilder::new();
@@ -165,9 +178,9 @@ mod test {
             Ok(builder.build())
         }
 
-        handle_connection(&mut fake_stream, test_handler).await;
+        handle_connection(connection, test_handler).await;
 
-        let written = fake_stream.into_inner();
+        let written = v.into_inner();
         assert!(String::from_utf8_lossy(&written).contains("ok"));
     }
 
@@ -177,8 +190,10 @@ mod test {
         let addr = server.listener.local_addr().unwrap();
 
         tokio::spawn(async move {
-            if let Ok((stream, _)) = server.listener.accept().await {
-                handle_connection(stream, server.handler).await;
+            if let Ok((mut stream, _)) = server.listener.accept().await {
+                let (r, w) = stream.split();
+                let connection = Connection::<_, _, Request>::new(r, w);
+                handle_connection(connection, server.handler).await;
             }
         });
 
@@ -229,8 +244,10 @@ mod test {
         let addr = server.listener.local_addr().unwrap();
 
         tokio::spawn(async move {
-            if let Ok((stream, _)) = server.listener.accept().await {
-                handle_connection(stream, server.handler).await;
+            if let Ok((mut stream, _)) = server.listener.accept().await {
+                let (r, w) = stream.split();
+                let connection = Connection::<_, _, Request>::new(r, w);
+                handle_connection(connection, server.handler).await;
             }
         });
 

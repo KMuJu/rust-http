@@ -9,7 +9,11 @@ async fn main() -> Result<(), ClientError> {
 
     let resp = client::send_request("google.com", &mut req).await?;
 
-    println!("Got response body: {}", String::from_utf8_lossy(&resp.body));
+    println!(
+        "Got response:\nStatus: {}\nBody: {}",
+        resp.status_line,
+        String::from_utf8_lossy(&resp.body)
+    );
 
     Ok(())
 }
