@@ -1,6 +1,9 @@
+use tokio::io::AsyncReadExt;
+
 use crate::message::{
     Headers,
     error::{BodyError, HeadersError},
+    stream_reader::StreamReader,
 };
 
 /// Different encoding types supported
@@ -211,10 +214,73 @@ impl BodyParser {
             None => Err(BodyError::Header(HeadersError::InvalidContentLength)), // TODO: Find better error type?
         }
     }
+
+    pub async fn p_body<R>(
+        &mut self,
+        headers: &mut Headers,
+        reader: &mut StreamReader<R>,
+    ) -> Result<Vec<u8>, BodyError>
+    where
+        R: AsyncReadExt + Unpin,
+    {
+        self.set_encoding(headers)?;
+        match self.encoding {
+            // No body
+            Some(Encoding::Nothing(0)) => Ok(Vec::new()),
+            Some(Encoding::Nothing(len)) => {
+                // Simply read len bytes from the stream
+                Ok(reader.read_n(len).await?)
+            }
+            Some(Encoding::Chunked) => {
+                let mut state = ChunkedState::Size;
+                let mut body = Vec::new();
+                loop {
+                    match state {
+                        ChunkedState::Size => {
+                            let line = reader.read_line().await?;
+                            match usize::from_str_radix(&String::from_utf8_lossy(&line), 16) {
+                                Ok(size) => {
+                                    state = ChunkedState::Data(size);
+                                    if size == 0 {
+                                        let len = { body.len() };
+                                        headers.set("Content-Length", len.to_string());
+
+                                        // TODO: Will need to change if server supports more encodings
+                                        // Is supposed to removed chunked from the header, but for now only
+                                        // chunked is supported
+                                        headers.remove("Transfer-Encoding");
+                                        break;
+                                    }
+                                }
+                                Err(e) => {
+                                    eprintln!("Error parsing chunked-size: {e}");
+                                    return Err(BodyError::MalformedChunkedSize);
+                                }
+                            }
+                        }
+                        ChunkedState::Data(len) => {
+                            let chunk = reader.read_n(len + CRLF.len()).await?;
+                            if chunk[len] != b'\r' && chunk[len + 1] != b'\n' {
+                                return Err(BodyError::MalformedChunkedBody);
+                            }
+                            body.extend_from_slice(&chunk[..len]);
+
+                            state = ChunkedState::Size;
+                        }
+                    }
+                }
+
+                Ok(body)
+            }
+            None => Err(BodyError::Header(HeadersError::InvalidContentLength)), // TODO: Find better error type?
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::io::Cursor;
+
     use crate::message::RequestError;
 
     use super::*;
@@ -298,6 +364,20 @@ mod tests {
             String::from_utf8_lossy(&body),
             String::from_utf8_lossy(b"ABCD")
         );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_parse_body_chunked_() -> Result<(), RequestError> {
+        let mut c = Cursor::new(b"1\r\nA\r\n4\r\n1\r\n1\r\n0\r\n");
+        let mut reader = StreamReader::new(&mut c);
+        let mut headers = Headers::new();
+        headers.parse_one(b"Transfer-Encoding: chunked\r\n")?;
+        let mut parser = BodyParser::new();
+        let body = parser.p_body(&mut headers, &mut reader).await?;
+
+        assert_eq!(String::from_utf8_lossy(&body), "A1\r\n1".to_string());
 
         Ok(())
     }

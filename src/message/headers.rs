@@ -153,6 +153,35 @@ impl Headers {
         Ok(end + CRLF.len())
     }
 
+    /// Parses one field line of the headers
+    /// Follows RFC 9112 Section 5
+    ///
+    /// field-line   = field-name ":" OWS field-value OWS
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if it does not follow the format above,
+    /// or the values in field-name or field-value does not follow RFC 9110 Section 5.5
+    pub fn parse_one_from_line(&mut self, line: &[u8]) -> Result<(), HeadersError> {
+        let parts = line.splitn(2, |&b| b == b':').collect::<Vec<&[u8]>>();
+
+        if parts.len() != 2 {
+            return Err(HeadersError::MalformedFieldLine);
+        }
+
+        let name_bytes = parts[0];
+        let value_bytes = parts[1].trim_ascii();
+        if !is_valid_token(name_bytes) || !is_valid_field_value(value_bytes) {
+            return Err(HeadersError::MalformedFieldLine);
+        }
+        let name = String::from_utf8_lossy(name_bytes).into_owned();
+        let value = String::from_utf8_lossy(value_bytes).into_owned();
+
+        self.add(&name, &value);
+
+        Ok(())
+    }
+
     pub async fn write_to<W: AsyncWriteExt + Unpin>(&self, mut w: W) -> Result<(), io::Error> {
         if self.0.is_empty() {
             w.write_all(b"\r\n").await?;

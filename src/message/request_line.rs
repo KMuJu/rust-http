@@ -79,6 +79,28 @@ impl RequestLine {
         )))
     }
 
+    pub fn from_line(line: &[u8]) -> Result<RequestLine, RequestLineError> {
+        let parts = line.split(|&b| b == b' ').collect::<Vec<&[u8]>>();
+        if parts.len() != 3 {
+            return Err(RequestLineError::MalformedRequestLine);
+        }
+
+        let method = Method::parse(parts[0])?;
+        let url = String::from_utf8_lossy(parts[1]).into_owned();
+        let version_parts = parts[2].split(|&b| b == b'/').collect::<Vec<&[u8]>>();
+        if version_parts.len() != 2 || version_parts[0] != b"HTTP" {
+            return Err(RequestLineError::MalformedRequestLine);
+        }
+
+        let version = HttpVersion::from_bytes(version_parts[1])?;
+
+        Ok(RequestLine {
+            method,
+            url,
+            version,
+        })
+    }
+
     pub fn from_parts(method: Method, url: String, version: HttpVersion) -> RequestLine {
         RequestLine {
             method,
