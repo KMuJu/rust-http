@@ -15,7 +15,7 @@ async fn main() {
 }
 
 fn handle_request(req: &Request) -> Result<Response, ServerError> {
-    println!("Got request to: {:?} {}", req.line.method, req.line.url);
+    println!("Got request to: {}", req.line);
     match (req.get_method(), req.get_url()) {
         (Method::Get, "/") => {
             let resp = Response::from_file("examples/simple.html", "text/html; charset=utf-8")?;

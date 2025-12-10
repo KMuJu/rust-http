@@ -1,4 +1,7 @@
-use std::io::{self, Write};
+use std::{
+    fmt::Display,
+    io::{self, Write},
+};
 
 use tokio::io::AsyncWriteExt;
 
@@ -98,8 +101,8 @@ impl StatusLine {
     ///
     /// This function will return an error if it does not follow the above format
     pub fn from_line(line: &[u8]) -> Result<StatusLine, StatusLineError> {
-        let parts = line.split(|&b| b == b' ').collect::<Vec<&[u8]>>();
-        if parts.len() != 3 && parts.len() != 2 {
+        let parts = line.splitn(3, |&b| b == b' ').collect::<Vec<&[u8]>>();
+        if parts.len() == 1 {
             return Err(StatusLineError::MalformedStatusLine);
         }
 
@@ -114,6 +117,18 @@ impl StatusLine {
             version,
             status_code,
         })
+    }
+}
+
+impl Display for StatusLine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "HTTP/{} {} {}",
+            self.version,
+            self.status_code.to_code(),
+            self.status_code.to_reason()
+        )
     }
 }
 

@@ -1,4 +1,7 @@
-use std::io::{self, Write};
+use std::{
+    fmt::Display,
+    io::{self, Write},
+};
 use tokio::io::AsyncWriteExt;
 
 use crate::message::{Method, error::RequestLineError, version::HttpVersion};
@@ -70,6 +73,18 @@ impl Default for RequestLine {
             url: "".to_string(),
             version: HttpVersion::default(),
         }
+    }
+}
+
+impl Display for RequestLine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} {} HTTP/{}",
+            self.method.to_str(),
+            self.url,
+            self.version,
+        )
     }
 }
 
