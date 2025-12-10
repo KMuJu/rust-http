@@ -4,7 +4,7 @@ use tokio::net::TcpSocket;
 
 use crate::{
     client::error::ClientError,
-    message::{Request, Response, ResponseParser},
+    message::{Connection, Request, Response},
 };
 pub mod error;
 
@@ -24,12 +24,14 @@ pub async fn send_request(url: &str, req: &mut Request) -> Result<Response, Clie
     println!("Req: {req:?}");
 
     let mut stream = socket.connect(addr).await?;
+    let (r, w) = stream.split();
+    let mut connection = Connection::<_, _, Response>::new(r, w);
 
-    req.write_to(&mut stream).await?;
+    connection.send(req).await?;
 
     println!("Wrote request to stream");
 
-    let resp = ResponseParser::response_from_reader(&mut stream).await?;
+    let resp = connection.read().await?;
 
     Ok(resp)
 }
