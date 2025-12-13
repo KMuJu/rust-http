@@ -10,8 +10,14 @@ impl HttpVersion {
         match bytes {
             b"1.0" => Ok(Self(1, 0)),
             b"1.1" => Ok(Self(1, 1)),
+            b"2.0" => Ok(Self(2, 0)),
+            b"3.0" => Ok(Self(3, 0)),
             _ => Err(VersionError::InvalidHTTPVersion),
         }
+    }
+
+    pub fn new(major: u8, minor: u8) -> Self {
+        Self(major, minor)
     }
 }
 
@@ -33,6 +39,16 @@ impl PartialEq<HttpVersion> for (u8, u8) {
     }
 }
 
+impl PartialOrd<HttpVersion> for HttpVersion {
+    fn partial_cmp(&self, other: &HttpVersion) -> Option<std::cmp::Ordering> {
+        match self.0.partial_cmp(&other.0) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        self.1.partial_cmp(&other.1)
+    }
+}
+
 impl From<(u8, u8)> for HttpVersion {
     fn from(value: (u8, u8)) -> Self {
         Self(value.0, value.1)
@@ -41,14 +57,6 @@ impl From<(u8, u8)> for HttpVersion {
 
 impl Display for HttpVersion {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match (self.0, self.1) {
-                (1, 0) => "1.0".to_string(),
-                (1, 1) => "1.1".to_string(),
-                (_, _) => "".to_string(),
-            }
-        )
+        write!(f, "{}.{}", self.0, self.1)
     }
 }

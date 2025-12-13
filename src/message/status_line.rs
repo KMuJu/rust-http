@@ -59,7 +59,7 @@ pub struct StatusLine {
 impl StatusLine {
     pub fn new(status_code: StatusCode) -> StatusLine {
         StatusLine {
-            version: HttpVersion::from((1, 1)),
+            version: HttpVersion::new(1, 1),
             status_code,
         }
     }

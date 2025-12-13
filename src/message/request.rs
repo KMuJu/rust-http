@@ -54,7 +54,7 @@ mod tests {
     #[tokio::test]
     async fn test_write_to() -> io::Result<()> {
         let mut request = Request {
-            line: RequestLine::from_parts(Method::Get, "/".to_string(), HttpVersion::from((1, 1))),
+            line: RequestLine::from_parts(Method::Get, "/".to_string(), HttpVersion::new(1, 1)),
             headers: Headers::new(),
             body: Vec::new(),
         };
