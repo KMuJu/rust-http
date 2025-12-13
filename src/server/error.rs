@@ -8,4 +8,7 @@ pub enum ServerError {
     InternalError,
     #[error("IO: {0}")]
     IO(#[from] io::Error),
+
+    #[error("TlsError")]
+    Tls,
 }

@@ -1,16 +1,18 @@
 mod error;
 
-use std::io;
+use std::sync::Arc;
 
 pub use error::ServerError;
 
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use rustls::pki_types::pem::PemObject;
+use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
+use tokio_rustls::rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use tokio_rustls::{TlsAcceptor, TlsStream};
 
-use crate::message::{Connection, Request, RequestError, Response, ResponseBuilder, StatusCode};
-
-pub trait Stream: AsyncRead + AsyncWrite + Unpin + Send {}
-impl<T: AsyncRead + AsyncWrite + Unpin + Send> Stream for T {}
+use crate::message::{
+    Connection, Request, RequestError, Response, ResponseBuilder, StatusCode, Stream,
+};
 
 /// HTTP Server
 ///
@@ -20,12 +22,18 @@ pub struct Server {
     handler: Handler,
     _addr: String,
     listener: TcpListener,
+    acceptor: Option<TlsAcceptor>,
+}
+
+pub struct TlsConfig {
+    pub certs: &'static str,
+    pub key: &'static str,
 }
 
 type Handler = fn(&Request) -> Result<Response, ServerError>;
 
 impl Server {
-    pub async fn new(addr: &str, handler: Handler) -> Server {
+    pub async fn http(addr: &str, handler: Handler) -> Server {
         let listener = TcpListener::bind(addr)
             .await
             .expect("Could not bind to addr: {addr}");
@@ -33,6 +41,32 @@ impl Server {
             handler,
             _addr: addr.to_string(),
             listener,
+            acceptor: None,
+        }
+    }
+
+    pub async fn https(addr: &str, handler: Handler, config: &TlsConfig) -> Server {
+        let listener = TcpListener::bind(addr)
+            .await
+            .expect("Could not bind to addr: {addr}");
+
+        let certs: Vec<_> = CertificateDer::pem_file_iter(config.certs)
+            .unwrap()
+            .map(|c| c.unwrap())
+            .collect();
+        let key = PrivateKeyDer::from_pem_file(config.key).unwrap();
+
+        let config = rustls::ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(certs, key)
+            .unwrap();
+        let acceptor = TlsAcceptor::from(Arc::new(config));
+
+        Server {
+            handler,
+            _addr: addr.to_string(),
+            listener,
+            acceptor: Some(acceptor),
         }
     }
 
@@ -47,12 +81,20 @@ impl Server {
         let handler = self.handler;
 
         loop {
-            let (mut stream, _) = self.listener.accept().await?;
+            let (stream, _) = self.listener.accept().await?;
             let addr = stream.peer_addr().unwrap();
+            let acceptor = self.acceptor.clone();
             println!("Got request from: {:?}", addr);
 
             tokio::spawn(async move {
-                let (r, w) = stream.split();
+                let stream = match acceptor {
+                    None => Stream::from(stream),
+                    Some(a) => {
+                        let s = TlsStream::Server(a.accept(stream).await.unwrap());
+                        Stream::from(s)
+                    }
+                };
+                let (r, w) = io::split(stream);
                 let connection = Connection::<_, _, Request>::new(r, w);
                 handle_connection(connection, handler).await;
                 println!("Closing connection");
@@ -166,6 +208,7 @@ mod test {
                 handler,
                 _addr: "".to_string(),
                 listener,
+                acceptor: None,
             }
         }
     }

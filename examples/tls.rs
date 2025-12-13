@@ -1,13 +1,22 @@
 use rust_http::message::Method;
 use rust_http::message::ResponseBuilder;
 use rust_http::message::StatusCode;
+use rust_http::server::TlsConfig;
 use rust_http::server::{Server, ServerError};
 
 use rust_http::message::{Request, Response};
+use rustls::crypto;
+use rustls::crypto::CryptoProvider;
 
 #[tokio::main]
 async fn main() {
-    let server = Server::http("localhost:42069", handle_request).await;
+    CryptoProvider::install_default(crypto::aws_lc_rs::default_provider())
+        .expect("install default crypto provider");
+    let config = TlsConfig {
+        certs: "certs/cert.pem",
+        key: "certs/cert.key.pem",
+    };
+    let server = Server::https("localhost:42069", handle_request, &config).await;
     let r = server.listen_and_serve().await;
     if let Err(e) = r {
         eprint!("Error while listening: {e}")
