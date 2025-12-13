@@ -9,6 +9,7 @@ mod request_line;
 mod response;
 mod response_builder;
 mod status_line;
+mod stream;
 mod stream_reader;
 mod version;
 
@@ -24,4 +25,5 @@ pub use request_line::RequestLine;
 pub use response::Response;
 pub use response_builder::ResponseBuilder;
 pub use status_line::{StatusCode, StatusLine};
+pub use stream::Stream;
 pub use stream_reader::StreamReader;
