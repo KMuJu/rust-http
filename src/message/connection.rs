@@ -65,7 +65,8 @@ where
     }
 
     pub async fn respond(&mut self, response: &mut Response) -> io::Result<()> {
-        response.write_to(&mut self.writer).await
+        response.write_to(&mut self.writer).await?;
+        self.writer.flush().await
     }
 }
 
@@ -101,7 +102,8 @@ where
     }
 
     pub async fn send(&mut self, request: &mut Request) -> io::Result<()> {
-        request.write_to(&mut self.writer).await
+        request.write_to(&mut self.writer).await?;
+        self.writer.flush().await
     }
 }
 
