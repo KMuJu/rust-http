@@ -1,5 +1,7 @@
 mod error;
 
+use std::io;
+
 pub use error::ServerError;
 
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -53,6 +55,7 @@ impl Server {
                 let (r, w) = stream.split();
                 let connection = Connection::<_, _, Request>::new(r, w);
                 handle_connection(connection, handler).await;
+                println!("Closing connection");
             });
         }
     }
@@ -67,8 +70,9 @@ where
     builder.set_status_code(StatusCode::InternalServerError);
     let mut response = builder.build();
     let r = connection.respond(&mut response).await;
-    if r.is_err() {
+    if let Err(e) = r {
         eprintln!("Failed to write internal error to tcp stream");
+        eprintln!("{e}");
         // Something is wrong if it can't write to the stream
     }
 }
@@ -88,8 +92,12 @@ where
 
         let request = match request {
             Ok(req) => req,
-            Err(RequestError::MalformedRequest) => {
-                eprintln!("Got EOF while parsing");
+            Err(RequestError::IO(e))
+                if e.kind() == io::ErrorKind::UnexpectedEof
+                    || e.kind() == io::ErrorKind::ConnectionAborted
+                    || e.kind() == io::ErrorKind::BrokenPipe =>
+            {
+                eprintln!("IO error handling request: {e}");
                 break;
             }
             Err(_) => {
@@ -118,7 +126,6 @@ where
             break;
         }
     }
-    println!("Closing connection");
 }
 
 fn should_close(req: &Request, resp: &Response) -> bool {
