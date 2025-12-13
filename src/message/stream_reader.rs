@@ -1,4 +1,4 @@
-use tokio::io::{self, AsyncReadExt};
+use tokio::io::{self, AsyncRead, AsyncReadExt};
 
 pub struct StreamReader<R> {
     read: usize,
@@ -6,7 +6,7 @@ pub struct StreamReader<R> {
     reader: R,
 }
 
-impl<R: AsyncReadExt + Unpin> StreamReader<R> {
+impl<R: AsyncRead + Unpin> StreamReader<R> {
     pub fn new(reader: R) -> Self {
         StreamReader {
             read: 0,
@@ -22,8 +22,8 @@ impl<R: AsyncReadExt + Unpin> StreamReader<R> {
             for (i, &b) in self.buf[..self.read].iter().enumerate() {
                 if last_was_carrage_return && b == b'\n' {
                     out.pop();
-                    let index = (i + 1).min(self.buf.len());
-                    self.buf.copy_within(index.., 0);
+                    let index = (i + 1).min(self.read);
+                    self.buf.copy_within(index..self.read, 0);
                     self.read -= index;
                     return Ok(out);
                 }
@@ -58,17 +58,7 @@ impl<R: AsyncReadExt + Unpin> StreamReader<R> {
             return Ok(buf);
         }
         let mut b = vec![0u8; remaining];
-        let mut read = 0;
-        while read < remaining {
-            let n = self.reader.read(&mut b[read..]).await?;
-            if n == 0 {
-                return Err(io::Error::new(
-                    io::ErrorKind::ConnectionAborted,
-                    "Unexpected EOF",
-                ));
-            }
-            read += n;
-        }
+        self.reader.read_exact(&mut b).await?;
 
         // copies into the buf from self.read
         // if self.read is longer than n or buf len then it will return earlier
