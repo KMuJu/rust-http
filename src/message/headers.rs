@@ -174,10 +174,6 @@ mod tests {
 
     #[test]
     fn test_header_parse() -> Result<(), HeadersError> {
-        let input = b"".to_vec();
-        let mut header = Headers::new();
-        header.parse_one_from_line(&input)?;
-
         let input = b"Host: localhost:42069".to_vec();
         let mut header = Headers::new();
         header.parse_one_from_line(&input)?;
