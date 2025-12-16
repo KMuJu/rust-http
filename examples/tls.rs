@@ -16,7 +16,9 @@ async fn main() {
         certs: "certs/cert.pem",
         key: "certs/cert.key.pem",
     };
-    let server = Server::https("localhost:42069", handle_request, &config).await;
+    let server = Server::https("localhost:42069", handle_request, &config)
+        .await
+        .expect("Could not create https server");
     let r = server.listen_and_serve().await;
     if let Err(e) = r {
         eprint!("Error while listening: {e}")

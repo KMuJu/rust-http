@@ -45,29 +45,30 @@ impl Server {
         }
     }
 
-    pub async fn https(addr: &str, handler: Handler, config: &TlsConfig) -> Server {
+    pub async fn https(
+        addr: &str,
+        handler: Handler,
+        config: &TlsConfig,
+    ) -> Result<Server, ServerError> {
         let listener = TcpListener::bind(addr)
             .await
             .expect("Could not bind to addr: {addr}");
 
-        let certs: Vec<_> = CertificateDer::pem_file_iter(config.certs)
-            .unwrap()
-            .map(|c| c.unwrap())
-            .collect();
-        let key = PrivateKeyDer::from_pem_file(config.key).unwrap();
+        let certs = CertificateDer::pem_file_iter(config.certs)?.collect::<Result<Vec<_>, _>>()?;
+        let key = PrivateKeyDer::from_pem_file(config.key)?;
 
         let config = rustls::ServerConfig::builder()
             .with_no_client_auth()
-            .with_single_cert(certs, key)
-            .unwrap();
+            .with_single_cert(certs, key)?;
+
         let acceptor = TlsAcceptor::from(Arc::new(config));
 
-        Server {
+        Ok(Server {
             handler,
             _addr: addr.to_string(),
             listener,
             acceptor: Some(acceptor),
-        }
+        })
     }
 
     /// Listens to incoming streams, sending them to the threadpool
@@ -90,7 +91,14 @@ impl Server {
                 let stream = match acceptor {
                     None => Stream::from(stream),
                     Some(a) => {
-                        let s = TlsStream::Server(a.accept(stream).await.unwrap());
+                        let accepted = match a.accept(stream).await {
+                            Ok(a) => a,
+                            Err(e) => {
+                                eprintln!("Got error accepting stream: {}", e);
+                                return;
+                            }
+                        };
+                        let s = TlsStream::Server(accepted);
                         Stream::from(s)
                     }
                 };
