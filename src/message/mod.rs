@@ -15,7 +15,8 @@ mod version;
 
 mod test_utils;
 
-pub use connection::Connection;
+pub use connection::IncommingConnection;
+pub use connection::OutgoingConnection;
 pub use error::{RequestError, ResponseError};
 pub use headers::Headers;
 pub use method::Method;

@@ -11,7 +11,7 @@ use tokio_rustls::rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use tokio_rustls::{TlsAcceptor, TlsStream};
 
 use crate::message::{
-    Connection, Request, RequestError, Response, ResponseBuilder, StatusCode, Stream,
+    IncommingConnection, Request, RequestError, Response, ResponseBuilder, StatusCode, Stream,
 };
 
 /// HTTP Server
@@ -103,7 +103,7 @@ impl Server {
                     }
                 };
                 let (r, w) = io::split(stream);
-                let connection = Connection::<_, _, Request>::new(r, w);
+                let connection = IncommingConnection::new(r, w);
                 handle_connection(connection, handler).await;
                 println!("Closing connection");
             });
@@ -111,7 +111,7 @@ impl Server {
     }
 }
 
-async fn internal_error<R, W>(connection: &mut Connection<R, W, Request>)
+async fn internal_error<R, W>(connection: &mut IncommingConnection<R, W>)
 where
     R: AsyncReadExt + Unpin,
     W: AsyncWriteExt + Unpin,
@@ -132,7 +132,7 @@ where
 /// Then writes the returning response to the stream
 ///
 /// If any of the above failes, it will write an InternalServerError response to the stream
-async fn handle_connection<R, W>(mut connection: Connection<R, W, Request>, handler: Handler)
+async fn handle_connection<R, W>(mut connection: IncommingConnection<R, W>, handler: Handler)
 where
     R: AsyncReadExt + Unpin,
     W: AsyncWriteExt + Unpin,
@@ -197,6 +197,8 @@ mod test {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpStream;
 
+    use crate::message::IncommingConnection;
+
     use super::*;
 
     fn fake_handler(_: &Request) -> Result<Response, ServerError> {
@@ -228,7 +230,7 @@ mod test {
         let input = b"GET / HTTP/1.1\r\nHost: localhost\r\n\r\n".to_vec();
         let fake_stream = Cursor::new(input.clone());
         let mut v = Cursor::new(Vec::new());
-        let connection = Connection::<_, _, Request>::new(fake_stream, &mut v);
+        let connection = IncommingConnection::new(fake_stream, &mut v);
 
         fn test_handler(_: &Request) -> Result<Response, ServerError> {
             let mut builder = ResponseBuilder::new();
@@ -250,7 +252,7 @@ mod test {
         tokio::spawn(async move {
             if let Ok((mut stream, _)) = server.listener.accept().await {
                 let (r, w) = stream.split();
-                let connection = Connection::<_, _, Request>::new(r, w);
+                let connection = IncommingConnection::new(r, w);
                 handle_connection(connection, server.handler).await;
             }
         });
@@ -304,7 +306,7 @@ mod test {
         tokio::spawn(async move {
             if let Ok((mut stream, _)) = server.listener.accept().await {
                 let (r, w) = stream.split();
-                let connection = Connection::<_, _, Request>::new(r, w);
+                let connection = IncommingConnection::new(r, w);
                 handle_connection(connection, server.handler).await;
             }
         });

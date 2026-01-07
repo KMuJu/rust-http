@@ -4,7 +4,7 @@ use tokio::net::TcpSocket;
 
 use crate::{
     client::error::ClientError,
-    message::{Connection, Request, Response},
+    message::{OutgoingConnection, Request, Response},
 };
 pub mod error;
 
@@ -25,7 +25,7 @@ pub async fn send_request(url: &str, req: &mut Request) -> Result<Response, Clie
 
     let mut stream = socket.connect(addr).await?;
     let (r, w) = stream.split();
-    let mut connection = Connection::<_, _, Response>::new(r, w);
+    let mut connection = OutgoingConnection::new(r, w);
 
     connection.send(req).await?;
 
